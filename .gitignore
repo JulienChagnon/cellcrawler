@@ -1,0 +1,19 @@
+# Build outputs
+pc/build/
+pc/third_party/
+tests/build/
+firmware/esp32/.pio/
+android/.gradle/
+android/build/
+android/app/build/
+android/app/.cxx/
+android/build-native-check/
+
+# Machine-specific / secret
+android/local.properties
+fpv.ini
+
+# Editors
+.idea/
+.vscode/
+*.iml
