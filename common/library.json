@@ -1,0 +1,9 @@
+{
+  "name": "fpv-common",
+  "version": "1.0.0",
+  "description": "Header-only wire protocol shared by the ESP32 firmware, Android app and PC app",
+  "build": {
+    "includeDir": ".",
+    "srcFilter": ["-<*>"]
+  }
+}
