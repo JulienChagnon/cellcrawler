@@ -1,0 +1,40 @@
+; FPV truck ground station config. Copy to fpv.ini next to fpv-pc.exe.
+
+; udp    = normal: phone connects to this PC over the internet / LAN
+; serial = bench test: ESP32 plugged straight into this PC over USB (no phone, no video)
+mode = udp
+
+; UDP port the phone connects to. Forward this port (UDP) on your router to this PC.
+port = 47000
+
+; Shared secret, must match the phone app. Generate with:  fpv-pc --genkey
+key = 00000000000000000000000000000000
+
+; COM port of the ESP32 for mode = serial (Device Manager -> Ports)
+serial_port = COM3
+
+; ---- Controls ----
+steer_deadzone = 0.05
+; 0 = linear, 1 = fully cubic (finer control near centre)
+steer_expo = 0.25
+steer_invert = 0
+trigger_deadzone = 0.03
+; Initial throttle scale as a fraction of the ESP32's hard cap (adjust live with D-pad up/down)
+throttle_scale = 1.0
+; Above this round-trip time the throttle is halved automatically
+rtt_limit_ms = 250
+
+; ---- Video ----
+; 1 = D3D11 hardware decode (falls back to software automatically)
+hw_decode = 1
+fullscreen = 0
+; vsync adds up to one refresh of latency; leave off unless tearing bothers you
+vsync = 0
+window_width = 1280
+window_height = 720
+
+; ---- Battery ----
+; 0 = use the cell count the ESP32 detected at power-up
+cells = 0
+; lipo or nimh
+chemistry = lipo
