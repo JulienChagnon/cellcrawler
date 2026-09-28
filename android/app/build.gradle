@@ -1,0 +1,49 @@
+plugins {
+    id 'com.android.application'
+}
+
+// Optional machine-local NDK location (e.g. when C: is full): fpv.ndkPath=D:/android-ndk/... in local.properties
+def localProps = new Properties()
+def localFile = rootProject.file('local.properties')
+if (localFile.exists()) localFile.withInputStream { localProps.load(it) }
+
+android {
+    namespace 'com.fpvcar.rover'
+    compileSdk 35
+    ndkVersion '27.2.12479018'
+    if (localProps['fpv.ndkPath']) ndkPath localProps['fpv.ndkPath']
+
+    defaultConfig {
+        applicationId 'com.fpvcar.rover'
+        minSdk 26          // AMediaCodec_createInputSurface
+        targetSdk 35
+        versionCode 1
+        versionName '1.0'
+        ndk {
+            abiFilters 'arm64-v8a'   // Mi A3 (Snapdragon 665)
+        }
+        externalNativeBuild {
+            cmake {
+                arguments '-DANDROID_STL=c++_static'
+            }
+        }
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled false
+            signingConfig signingConfigs.debug   // sideloaded, no store
+        }
+    }
+
+    externalNativeBuild {
+        cmake {
+            path 'src/main/cpp/CMakeLists.txt'
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+}
