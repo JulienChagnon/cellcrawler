@@ -37,4 +37,4 @@ window_height = 720
 ; 0 = use the cell count the ESP32 detected at power-up
 cells = 0
 ; lipo or nimh
-chemistry = lipo
+chemistry = nimh

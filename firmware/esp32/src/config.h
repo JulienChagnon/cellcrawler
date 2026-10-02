@@ -50,12 +50,12 @@ inline drive::Config driveConfig() {
 // ---- Battery -----------------------------------------------------------------------
 // Divider: battery+ -> R1 -> GPIO34 -> R2 -> GND, 100 nF from GPIO34 to GND.
 // Pick R1/R2 for your pack (docs/wiring.md) so the pin never exceeds ~2.5 V.
-constexpr uint32_t kDividerR1 = 100000;
-constexpr uint32_t kDividerR2 = 15000;
+constexpr uint32_t kDividerR1 = 47000;
+constexpr uint32_t kDividerR2 = 15000;  // 6-cell NiMH: ~9.0 V off the charger -> 2.18 V
 // Multiply by measured/reported after checking with a multimeter (1.000 = no correction).
 constexpr float kBattCalibration = 1.000f;
-constexpr fpv::battery::Chemistry kChemistry = fpv::battery::Chemistry::LiPo;
-constexpr uint8_t kCells = 0;  // 0 = auto-detect at power-up
+constexpr fpv::battery::Chemistry kChemistry = fpv::battery::Chemistry::NiMH;  // stock 7.2 V 6-cell 1800 mAh pack
+constexpr uint8_t kCells = 6;  // 0 = auto-detect (unreliable for NiMH: a flat 6-cell reads as 5)
 
 // ---- Link ----------------------------------------------------------------------------
 constexpr uint32_t kTelemetryPeriodMs = 50;

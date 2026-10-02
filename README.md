@@ -69,10 +69,9 @@ build\fpv-pc.exe
 ```
 
 ### Phone app
-Open `android/` in Android Studio, then build and run on the Mi A3. From the command line
-you can also run `cd android && gradlew assembleDebug` and install
-`app/build/outputs/apk/debug/app-debug.apk`. The app asks for the PC address, the port, and
-the same key as `fpv.ini`.
+Run `cd android && gradlew assembleRelease`, or open `android/` in Android Studio. Install
+`app/build/outputs/apk/release/app-release.apk` (an optimized build) on the Mi A3. The app
+asks for the PC address, the port, and the same key as `fpv.ini`.
 
 ### Tests
 ```
