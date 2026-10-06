@@ -2,6 +2,7 @@
 // Build & run: see tests/CMakeLists.txt (or `g++ -std=c++17 -I../common -I../firmware/esp32/src test_main.cpp`).
 #include <cstdio>
 #include <cstring>
+#include <string>
 #include <vector>
 
 #include "drive_logic.h"
@@ -9,6 +10,7 @@
 #include "fpv/cobs.h"
 #include "fpv/crc16.h"
 #include "fpv/net_proto.h"
+#include "fpv/passphrase.h"
 #include "fpv/serial_proto.h"
 #include "fpv/siphash.h"
 #include "mapping.h"
@@ -70,6 +72,53 @@ static void testSipHash() {
     CHECK(siphash24(k, msg, 8) == 0x93f5f5799a932462ULL);
     CHECK(!parseSipKey("0001", k));
     CHECK(!parseSipKey("zz0102030405060708090a0b0c0d0e0f", k));
+}
+
+static std::string hex(const uint8_t* p, size_t n) {
+    std::string s;
+    char b[3];
+    for (size_t i = 0; i < n; ++i) {
+        std::snprintf(b, sizeof b, "%02x", p[i]);
+        s += b;
+    }
+    return s;
+}
+
+static void testPassphrase() {
+    // Reference values from Python's hashlib.
+    uint8_t h[40];
+    sha256::hash(reinterpret_cast<const uint8_t*>("abc"), 3, h);
+    CHECK(hex(h, 32) == "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad");
+    std::string a(1000, 'a');
+    sha256::hash(reinterpret_cast<const uint8_t*>(a.data()), a.size(), h);
+    CHECK(hex(h, 32) == "41edece42d63e8d9bf515a9ba6932e1c20cbc9f5a5d134645adb5db1b9737ea3");
+
+    auto u = [](const char* s) { return reinterpret_cast<const uint8_t*>(s); };
+    pbkdf2Sha256(u("password"), 8, u("salt"), 4, 1, h, 32);
+    CHECK(hex(h, 32) == "120fb6cffcf8b32c43e7225256c4f837a86548c92ccc35480805987cb70be17b");
+    pbkdf2Sha256(u("password"), 8, u("salt"), 4, 4096, h, 40);  // two blocks
+    CHECK(hex(h, 40) == "c5e478d59288c841aa530db6845c4c8d962893a001ce4e11a4963873aa98134af7ad98c1b458ce3f");
+    std::string longPass(100, 'x');  // longer than a block: hashed first
+    pbkdf2Sha256(u(longPass.c_str()), longPass.size(), u("salt"), 4, 3, h, 32);
+    CHECK(hex(h, 32) == "59bfa49750dd5462ce38370a1e7abe0736ff334cf1c2f0d84f23a03435d660d1");
+
+    SipKey k, hk;
+    CHECK(secretToKey("correct horse battery staple", k) == nullptr);
+    CHECK(k.k0 == 0xa91ea466522188ceULL && k.k1 == 0xf00cf9620829e846ULL);
+    // 32 hex characters are a raw key, as before.
+    CHECK(secretToKey("000102030405060708090A0B0C0D0E0F", k) == nullptr);
+    parseSipKey("000102030405060708090a0b0c0d0e0f", hk);
+    CHECK(k.k0 == hk.k0 && k.k1 == hk.k1);
+    CHECK(secretToKey("", k) != nullptr);
+    CHECK(secretToKey("short pass", k) != nullptr);
+    CHECK(secretToKey("twelve chars", k) == nullptr);
+    CHECK(secretToKey("long enough; but comment", k) != nullptr);
+    CHECK(secretToKey("long enough # but comment", k) != nullptr);
+    CHECK(secretToKey("cafÃ© au lait please", k) != nullptr);  // non-ASCII
+    SipKey upper;
+    secretToKey("Correct horse battery staple", upper);
+    secretToKey("correct horse battery staple", k);
+    CHECK(upper.k0 != k.k0);  // case-sensitive
 }
 
 static void testSerialFrames() {
@@ -511,6 +560,7 @@ int main() {
     testCrc();
     testCobs();
     testSipHash();
+    testPassphrase();
     testSerialFrames();
     testNetPackets();
     testReplayWindow();
