@@ -3,7 +3,7 @@
 #include <string>
 
 #include "fpv/battery.h"
-#include "fpv/siphash.h"
+#include "fpv/passphrase.h"
 #include "mapping.h"
 
 namespace pc {
@@ -11,7 +11,7 @@ namespace pc {
 struct Config {
     enum class Mode { Udp, Serial } mode = Mode::Udp;
     uint16_t port = 47000;
-    std::string keyHex;
+    std::string secret;  // passphrase or 32-hex key
     fpv::SipKey key;
     std::string serialPort = "COM3";
 

@@ -7,8 +7,10 @@ mode = udp
 ; UDP port the phone connects to. Forward this port (UDP) on your router to this PC.
 port = 47000
 
-; Shared secret, must match the phone app. Generate with:  fpv-pc --genkey
-key = 00000000000000000000000000000000
+; Shared secret, typed the same in the phone app. A passphrase: at least 12 characters,
+; case-sensitive, no ; or # (four or five random words is good). A 32-hex key from
+; fpv-pc --genkey works here too, and older configs with key = ... still work.
+passphrase =
 
 ; COM port of the ESP32 for mode = serial (Device Manager -> Ports)
 serial_port = COM3

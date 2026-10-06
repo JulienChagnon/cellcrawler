@@ -46,7 +46,7 @@ bool loadConfig(const std::string& path, Config& c) {
             else { std::fprintf(stderr, "%s:%d: mode must be udp or serial\n", path.c_str(), lineNo); return false; }
         }
         else if (k == "port") c.port = uint16_t(i);
-        else if (k == "key") c.keyHex = v;
+        else if (k == "passphrase" || k == "key") c.secret = v;
         else if (k == "serial_port") c.serialPort = v;
         else if (k == "steer_deadzone") c.mapping.steerDeadzone = f;
         else if (k == "steer_expo") c.mapping.steerExpo = f;
@@ -64,9 +64,11 @@ bool loadConfig(const std::string& path, Config& c) {
         else std::fprintf(stderr, "%s:%d: unknown key '%s' ignored\n", path.c_str(), lineNo, k.c_str());
     }
 
-    if (c.mode == Config::Mode::Udp && !fpv::parseSipKey(c.keyHex.c_str(), c.key)) {
-        std::fprintf(stderr, "config: key must be 32 hex characters (run with --genkey to make one)\n");
-        return false;
+    if (c.mode == Config::Mode::Udp) {
+        if (const char* err = fpv::secretToKey(c.secret.c_str(), c.key)) {
+            std::fprintf(stderr, "config: %s (set passphrase = ... in %s)\n", err, path.c_str());
+            return false;
+        }
     }
     return true;
 }
