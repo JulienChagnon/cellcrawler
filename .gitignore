@@ -17,3 +17,6 @@ fpv.ini
 .idea/
 .vscode/
 *.iml
+
+# OpenSCAD models (phone mount)
+hardware/
