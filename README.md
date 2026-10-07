@@ -63,15 +63,14 @@ cd pc
 powershell -ExecutionPolicy Bypass -File fetch_deps.ps1     # SDL3 + FFmpeg into pc/third_party
 cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
 cmake --build build
-build\fpv-pc.exe --genkey                                  # prints a new shared key
-copy build\fpv.ini.example build\fpv.ini                   # then paste the key into fpv.ini
+copy build\fpv.ini.example build\fpv.ini                   # then set passphrase = ... in fpv.ini
 build\fpv-pc.exe
 ```
 
 ### Phone app
 Run `cd android && gradlew assembleRelease`, or open `android/` in Android Studio. Install
 `app/build/outputs/apk/release/app-release.apk` (an optimized build) on the Mi A3. The app
-asks for the PC address, the port, and the same key as `fpv.ini`.
+asks for the PC address, the port, and the same passphrase as `fpv.ini`.
 
 ### Tests
 ```
@@ -85,7 +84,7 @@ cmake -S tests -B tests/build && cmake --build tests/build && tests/build/fpv-te
    caps, the LB gear toggle, the reverse sequence and the double-tap-brake guard with the
    wheels up. Unplug USB and the truck must stop.
 2. **PC video path, no truck:** run `fpv-pc` in `udp` mode and
-   `fpv-fake-phone --key <key>` on the same PC. You should see a test pattern and a full OSD.
+   `fpv-fake-phone --key "<passphrase>"` on the same PC. You should see a test pattern and a full OSD.
 3. **Phone on home WiFi:** use the PC's LAN IP as the address. Plug the ESP32 into the phone
    with an OTG adapter.
 4. **Phone on LTE:** follow docs/networking.md (NAT check, port forward, dynamic DNS).
