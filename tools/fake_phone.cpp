@@ -2,7 +2,7 @@
 // be tested without the truck. Video is a synthetic test pattern encoded with whatever
 // H.264 encoder FFmpeg has on this machine (Media Foundation / NVENC / QSV / AMF).
 //
-//   fpv-fake-phone --key <hex> [--host 127.0.0.1] [--port 47000] [--fps 60] [--kbps 4000]
+//   fpv-fake-phone --key <passphrase or hex> [--host 127.0.0.1] [--port 47000] [--fps 60] [--kbps 4000]
 //                  [--loss <percent>]
 //
 // Run on the same PC as fpv-pc and the OSD latency is exact (both share one clock).
@@ -25,6 +25,7 @@ extern "C" {
 }
 
 #include "fpv/net_proto.h"
+#include "fpv/passphrase.h"
 #include "fpv/serial_proto.h"
 
 using namespace fpv;
@@ -59,8 +60,8 @@ int main(int argc, char** argv) {
         else if (a == "--loss") lossPct = std::stod(v);
     }
     SipKey key;
-    if (!parseSipKey(keyHex.c_str(), key)) {
-        std::fprintf(stderr, "usage: fpv-fake-phone --key <32 hex> [--host h] [--port p] [--fps n] [--kbps n] [--loss pct]\n");
+    if (const char* err = secretToKey(keyHex.c_str(), key)) {
+        std::fprintf(stderr, "%s\nusage: fpv-fake-phone --key <passphrase or 32 hex> [--host h] [--port p] [--fps n] [--kbps n] [--loss pct]\n", err);
         return 2;
     }
 
