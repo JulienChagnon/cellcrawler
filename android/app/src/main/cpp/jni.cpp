@@ -7,6 +7,7 @@
 #include <string>
 
 #include "common.h"
+#include "fpv/passphrase.h"
 #include "engine.h"
 #include "usb_serial.h"
 #include "video.h"
@@ -38,7 +39,7 @@ JNIEXPORT jstring JNICALL Java_com_fpvcar_rover_NativeBridge_start(JNIEnv* env, 
     cfg.host = str(env, host);
     cfg.port = uint16_t(port);
     std::string k = str(env, key);
-    if (!fpv::parseSipKey(k.c_str(), cfg.key)) return env->NewStringUTF("Key must be 32 hex characters");
+    if (const char* err = fpv::secretToKey(k.c_str(), cfg.key)) return env->NewStringUTF(err);
     if (cfg.host.empty()) return env->NewStringUTF("PC address is empty");
     cfg.video.width = width;
     cfg.video.height = height;

@@ -40,7 +40,8 @@ public class MainActivity extends Activity {
 
         host = field(root, "PC address (IP or DNS name)", InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_URI);
         port = field(root, "UDP port", InputType.TYPE_CLASS_NUMBER);
-        key = field(root, "Key (32 hex chars, from fpv-pc --genkey)", InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS);
+        // visible-password: no autocorrect, auto-capitals or learning, but still readable
+        key = field(root, "Passphrase (same as fpv.ini, case-sensitive)", InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_VISIBLE_PASSWORD);
         width = field(root, "Video width", InputType.TYPE_CLASS_NUMBER);
         height = field(root, "Video height", InputType.TYPE_CLASS_NUMBER);
         fps = field(root, "FPS", InputType.TYPE_CLASS_NUMBER);
@@ -123,7 +124,7 @@ public class MainActivity extends Activity {
             Settings s = new Settings();
             s.host = host.getText().toString().trim();
             s.port = num(port, 47000);
-            s.key = key.getText().toString().trim().toLowerCase();
+            s.key = key.getText().toString().trim();
             s.width = num(width, 1280);
             s.height = num(height, 720);
             s.fps = num(fps, 60);
