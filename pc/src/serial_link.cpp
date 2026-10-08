@@ -31,7 +31,15 @@ public:
         // Overlapped so the reader thread never blocks writes (control latency).
         h_ = CreateFileA(path.c_str(), GENERIC_READ | GENERIC_WRITE, 0, nullptr, OPEN_EXISTING, FILE_FLAG_OVERLAPPED, nullptr);
         if (h_ == INVALID_HANDLE_VALUE) {
-            logf("serial: cannot open %s (error %lu)", cfg_.serialPort.c_str(), GetLastError());
+            const DWORD err = GetLastError();
+            if (err == ERROR_FILE_NOT_FOUND)
+                logf("serial: %s doesn't exist. Is the ESP32 plugged into this PC? Its port is under "
+                     "Device Manager -> Ports; put it in serial_port = in fpv.ini, or set mode = udp "
+                     "to drive through the phone", cfg_.serialPort.c_str());
+            else if (err == ERROR_ACCESS_DENIED)
+                logf("serial: %s is in use by another program (close PlatformIO's monitor, Arduino, ...)",
+                     cfg_.serialPort.c_str());
+            else logf("serial: cannot open %s (error %lu)", cfg_.serialPort.c_str(), err);
             return false;
         }
         DCB dcb{};
