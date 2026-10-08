@@ -1,6 +1,6 @@
 // FPV truck ground station.
 //
-//   fpv-pc [--config fpv.ini]     run
+//   fpv-pc [--config fpv.ini]     run (default: the fpv.ini next to fpv-pc.exe)
 //   fpv-pc --genkey               print a new random shared key
 //
 // Threads: control (1 kHz XInput poll -> send), network receive, video decode, and this
@@ -114,6 +114,36 @@ int genKey() {
     return 0;
 }
 
+// The folder fpv-pc.exe is in (with a trailing slash), so it works from any folder.
+std::string exeDir() {
+    char buf[MAX_PATH];
+    const DWORD n = GetModuleFileNameA(nullptr, buf, MAX_PATH);
+    if (n == 0 || n >= MAX_PATH) return "";
+    std::string p(buf, n);
+    return p.substr(0, p.find_last_of("\\/") + 1);
+}
+std::string defaultConfigPath() { return exeDir() + "fpv.ini"; }
+
+std::string espFlagNames(uint8_t f) {
+    using namespace fpv::ser;
+    std::string s;
+    if (f & kTelFailsafe) s += " FAILSAFE";
+    if (f & kTelArmed) s += " armed";
+    if (f & kTelGearReverse) s += " gear-R";
+    if (f & kTelReverseEngaged) s += " reverse-engaged";
+    if (f & kTelNeedNeutral) s += " need-neutral";
+    if (f & kTelLowBattery) s += " low-batt";
+    return s.empty() ? " none" : s;
+}
+std::string phoneFlagNames(uint8_t f) {
+    using namespace fpv;
+    std::string s;
+    if (f & net::kPhoneFailsafe) s += " FAILSAFE(no PC commands)";
+    s += (f & net::kPhoneUsbOk) ? " usb-ok" : " USB-DISCONNECTED";
+    s += (f & net::kPhoneEspOk) ? " esp-ok" : " ESP-NOT-RESPONDING";
+    return s;
+}
+
 struct Renderer {
     SDL_Renderer* r = nullptr;
     SDL_Texture* tex = nullptr;
@@ -173,7 +203,7 @@ struct Renderer {
 }  // namespace
 
 int main(int argc, char** argv) {
-    std::string configPath = "fpv.ini";
+    std::string configPath = defaultConfigPath();
     for (int i = 1; i < argc; ++i) {
         std::string a = argv[i];
         if (a == "--genkey") return genKey();
@@ -183,6 +213,8 @@ int main(int argc, char** argv) {
             return 2;
         }
     }
+    logToFile(exeDir() + "fpv-pc.log");
+    logf("fpv-pc starting, config %s", configPath.c_str());
     Config cfg;
     if (!loadConfig(configPath, cfg)) return 1;
 
