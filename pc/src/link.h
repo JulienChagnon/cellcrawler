@@ -29,6 +29,7 @@ struct LinkStatus {
     int64_t phoneMinusPcUs = 0;  // phone clock - PC clock
     float lossPct = 0;           // phone -> PC datagram loss, last second
     uint32_t badPackets = 0;     // failed MAC / malformed
+    uint64_t lastBadUs = 0;      // when the last one arrived (a wrong passphrase looks like this)
 
     uint16_t videoW = 0, videoH = 0;
     uint8_t videoFps = 0;

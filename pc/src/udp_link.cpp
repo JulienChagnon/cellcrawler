@@ -171,6 +171,14 @@ private:
         if (!net::openPacket(buf, n, cfg_.key, h, pl, plen)) {
             std::lock_guard<std::mutex> lk(mu_);
             ++st_.badPackets;
+            st_.lastBadUs = now;
+            // Usually the phone with a different passphrase: say so, at most every 5 s.
+            if (now - lastBadLogUs_ > 5000000) {
+                lastBadLogUs_ = now;
+                logf("udp: ignoring packets from %s that fail the passphrase check (%u so far). "
+                     "Is the phone's passphrase exactly the one in fpv.ini?",
+                     addrToString(from).c_str(), st_.badPackets);
+            }
             return;
         }
         {
@@ -267,6 +275,7 @@ private:
     bool havePhoneSession_ = false;
     uint32_t phoneSession_ = 0;
     net::ReplayWindow replay_;
+    uint64_t lastBadLogUs_ = 0;
     bool haveWinSeq_ = false;
     uint32_t winStartSeq_ = 0, maxSeq_ = 0, winRecv_ = 0;
 };
