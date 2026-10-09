@@ -209,6 +209,9 @@ void VideoReceiver::decodeLoop() {
     if (wantHw_ && av_hwdevice_ctx_create(&hwDev, AV_HWDEVICE_TYPE_D3D11VA, nullptr, nullptr, 0) == 0) {
         ctx->hw_device_ctx = av_buffer_ref(hwDev);
         ctx->get_format = pickFormat;
+        // The phone signals plain Baseline, which FFmpeg won't hand to the GPU by default;
+        // its stream uses no Baseline-only tools, so the GPU decodes it fine.
+        ctx->hwaccel_flags |= AV_HWACCEL_FLAG_ALLOW_PROFILE_MISMATCH;
         hw = true;
     }
     if (avcodec_open2(ctx, codec, nullptr) < 0) {
