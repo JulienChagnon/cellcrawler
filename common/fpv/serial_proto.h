@@ -27,6 +27,10 @@ enum Type : uint8_t {
 enum ControlFlags : uint8_t {
     kArmed = 1 << 0,
     kGearReverse = 1 << 1,
+    // The sender lost its own input (phone: no commands from the PC; PC: controller
+    // unplugged). The ESP32 ignores the rest of the frame and goes to failsafe at once,
+    // exactly as if commands had stopped arriving.
+    kFailsafe = 1 << 2,
 };
 
 // Normalised command, identical in meaning to the network CONTROL packet.
@@ -40,7 +44,7 @@ struct Control {
 
 // Telemetry status flags.
 enum TelemetryFlags : uint8_t {
-    kTelFailsafe = 1 << 0,        // no valid control frame recently -> outputs neutral
+    kTelFailsafe = 1 << 0,        // no valid control frame recently -> failsafe brake / neutral
     kTelArmed = 1 << 1,
     kTelGearReverse = 1 << 2,     // gear the firmware is actually in
     kTelReverseEngaged = 1 << 3,  // ESC reverse sequence complete
