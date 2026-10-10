@@ -353,6 +353,92 @@ static void testFailsafeAndArming() {
     CHECK_EQ(s.thr(), 0);
 }
 
+static void testFailsafeBrake() {
+    // Never armed: link loss stays neutral (and so does boot, so the ESC can arm).
+    {
+        Sim s;
+        s.hold(50, 0, 0, false, false);
+        s.now += 500;
+        s.out = s.logic.update(s.now);
+        CHECK_EQ(s.thr(), 0);
+        CHECK(s.out.flags & ser::kTelFailsafe);
+    }
+    // Disarmed on purpose, then lost: neutral.
+    {
+        Sim s;
+        s.hold(50, 0, 0, false);
+        s.hold(50, 0, 0, false, false);
+        s.now += 500;
+        s.out = s.logic.update(s.now);
+        CHECK_EQ(s.thr(), 0);
+    }
+    // kFailsafe frame from the phone: brake at once, no 150 ms wait. Frames keep coming, but
+    // the outage still counts towards relatch.
+    {
+        Sim s;
+        s.hold(20, 0, 0, false);
+        s.hold(200, 600, 0, false);
+        ser::Control lost;
+        lost.flags = ser::kFailsafe;
+        for (int i = 0; i < 120; ++i) {
+            s.now += 10;
+            s.logic.onCommand(s.now, lost);
+            s.out = s.logic.update(s.now);
+            CHECK_EQ(s.thr(), -250);
+            CHECK_EQ(s.out.steerUs, 1500);
+            CHECK(s.out.flags & ser::kTelFailsafe);
+        }
+        s.hold(10, 600, 0, false);  // back after 1.2 s with the trigger held
+        CHECK_EQ(s.thr(), 0);
+        CHECK(s.out.flags & ser::kTelNeedNeutral);
+    }
+    // Lost while the ESC may be reverse-armed (stopped after braking) or reversing: guard
+    // pulse first so the brake pulse can't reverse the truck, then brake.
+    for (bool reversing : {false, true}) {
+        Sim s;
+        s.hold(20, 0, 0, false);
+        s.hold(200, 1000, 0, false);
+        s.hold(100, 0, 1000, false);
+        s.hold(100, 0, 0, false);
+        if (reversing) {
+            s.hold(20, 0, 0, true);
+            s.hold(500, 1000, 0, true);
+            CHECK(s.logic.escState() == drive::EscState::Reversing);
+        }
+        CHECK(s.logic.mightReverse());
+        s.now += 160;
+        s.out = s.logic.update(s.now);
+        CHECK_EQ(s.thr(), 40);
+        for (int i = 0; i < 8; ++i) {
+            s.now += 10;
+            s.out = s.logic.update(s.now);
+        }
+        CHECK_EQ(s.thr(), -250);
+    }
+    // FwdRev ESC has no brake (below neutral = reverse): neutral.
+    {
+        drive::Config c;
+        c.escMode = drive::EscMode::FwdRev;
+        Sim s(c);
+        s.hold(20, 0, 0, false);
+        s.hold(100, 1000, 0, false);
+        s.now += 200;
+        s.out = s.logic.update(s.now);
+        CHECK_EQ(s.thr(), 0);
+    }
+    // failsafeBrake = 0: neutral, as before.
+    {
+        drive::Config c;
+        c.failsafeBrake = 0;
+        Sim s(c);
+        s.hold(20, 0, 0, false);
+        s.hold(100, 1000, 0, false);
+        s.now += 200;
+        s.out = s.logic.update(s.now);
+        CHECK_EQ(s.thr(), 0);
+    }
+}
+
 static void testCapsCannotBeExceeded() {
     Sim s;
     s.hold(20, 0, 0, false);
@@ -566,6 +652,7 @@ int main() {
     testReplayWindow();
     testBattery();
     testFailsafeAndArming();
+    testFailsafeBrake();
     testCapsCannotBeExceeded();
     testGearChangeOnlyAtZeroThrottle();
     testReverseSequence();
