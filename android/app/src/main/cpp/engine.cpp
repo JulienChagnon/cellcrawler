@@ -26,8 +26,6 @@ constexpr uint64_t kHelloSlowUs = 2000000;  // doubles as NAT keepalive
 constexpr uint64_t kPcTimeoutUs = 3000000;
 constexpr uint64_t kTelemetryUs = 50000;
 constexpr uint64_t kFailsafeUs = 250000;
-// Matches the ESP32's relatch time: shorter outages keep the arm state so driving resumes.
-constexpr uint64_t kRelatchUs = 1000000;
 constexpr uint64_t kReopenUs = 10000000;
 }  // namespace
 
@@ -245,10 +243,9 @@ void Engine::handlePacket(const uint8_t* buf, size_t n, uint64_t now) {
 }
 
 void Engine::failsafeTick(uint64_t now) {
-    uint64_t sinceControl;
     {
         std::lock_guard<std::mutex> lk(stateMu_);
-        sinceControl = lastControlRxUs_ ? now - lastControlRxUs_ : UINT64_MAX;
+        const uint64_t sinceControl = lastControlRxUs_ ? now - lastControlRxUs_ : UINT64_MAX;
         if (sinceControl <= kFailsafeUs) return;
         if (!failsafe_) {
             failsafe_ = true;
@@ -257,12 +254,11 @@ void Engine::failsafeTick(uint64_t now) {
         if (now - lastFailsafeTxUs_ < 20000) return;
         lastFailsafeTxUs_ = now;
     }
-    // Explicit neutral (the ESP32 would also time out on its own). Stay "armed" through
-    // short outages so driving resumes; after kRelatchUs disarm so the throttle must be
-    // released before the truck moves again.
-    ser::Control neutral;
-    if (sinceControl < kRelatchUs) neutral.flags = ser::kArmed;
-    usb_.sendControl(neutral);
+    // Tell the ESP32 the link is lost (it would also time out on its own). It applies its
+    // failsafe brake and handles re-latching the throttle when commands resume.
+    ser::Control lost;
+    lost.flags = ser::kFailsafe;
+    usb_.sendControl(lost);
 }
 
 void Engine::sendTelemetry(uint64_t now) {
