@@ -2,7 +2,10 @@
 // dependencies, so it is unit-tested on the PC (tests/test_drive_logic.cpp).
 //
 // Safety rules enforced here, regardless of what the host sends:
-//   * No valid command for failsafeMs  -> neutral throttle, centred steering.
+//   * No valid command for failsafeMs, or a command with kFailsafe (the phone or PC lost its
+//     own input) -> centred steering and, if the truck was armed, failsafeBrake for as
+//     long as it lasts (neutral in FwdRev mode, which has no brake). Never armed since
+//     boot -> neutral, so the ESC still arms at power-up.
 //   * Not armed                        -> neutral throttle.
 //   * After boot, disarm, or a failsafe longer than relatchMs
 //                                      -> throttle ignored until the host sends throttle 0.
@@ -57,6 +60,7 @@ struct Config {
     uint16_t commitMs = 60;      // pulse must be held this long before the ESC is assumed to have seen it
 
     uint16_t failsafeMs = 150;
+    uint16_t failsafeBrake = 500;  // brake on link loss, permille of full brake. 0 = neutral
     uint16_t relatchMs = 1000;  // outage length after which throttle must be released again
 };
 
@@ -73,20 +77,31 @@ public:
     explicit DriveLogic(const Config& cfg) : cfg_(cfg) {}
 
     void onCommand(uint32_t nowMs, const fpv::ser::Control& c) {
+        lastSeq_ = c.seq;
+        if (c.flags & fpv::ser::kFailsafe) {
+            // Not a command: the last real one stays in cmd_, and its age keeps counting
+            // towards relatchMs.
+            hostLost_ = true;
+            return;
+        }
         if (haveCmd_ && nowMs - lastCmdMs_ >= cfg_.relatchMs) needNeutral_ = true;
         cmd_ = c;
         lastCmdMs_ = nowMs;
         haveCmd_ = true;
+        hostLost_ = false;
     }
 
-    uint16_t lastSeq() const { return cmd_.seq; }
+    uint16_t lastSeq() const { return lastSeq_; }
     EscState escState() const { return esc_; }
     bool mightReverse() const { return mightReverse_; }
 
     Output update(uint32_t nowMs) {
         using namespace fpv::ser;
-        const bool fresh = haveCmd_ && (nowMs - lastCmdMs_) <= cfg_.failsafeMs;
+        const bool fresh = haveCmd_ && !hostLost_ && (nowMs - lastCmdMs_) <= cfg_.failsafeMs;
         const bool armed = fresh && (cmd_.flags & kArmed);
+        // Lost while armed (the last real command was armed): brake.
+        const bool failsafeBrake = haveCmd_ && !fresh && (cmd_.flags & kArmed) && cfg_.failsafeBrake > 0 &&
+                                   cfg_.escMode == EscMode::FwdBrakeRev;
         if (fresh && !armed) needNeutral_ = true;
         if (haveCmd_ && nowMs - lastCmdMs_ >= cfg_.relatchMs) needNeutral_ = true;
         if (armed && needNeutral_ && cmd_.throttle == 0) needNeutral_ = false;
@@ -99,7 +114,7 @@ public:
 
         Output out;
         out.steerUs = steerPulse(fresh ? cmd_.steer : 0);
-        out.throttleUs = throttlePulse(nowMs, throttleIn, brakeIn);
+        out.throttleUs = throttlePulse(nowMs, throttleIn, brakeIn, failsafeBrake);
         out.flags = 0;
         if (!fresh) out.flags |= kTelFailsafe;
         if (armed) out.flags |= kTelArmed;
@@ -128,9 +143,14 @@ private:
     int32_t fwdUs(uint16_t v, uint16_t cap) const { return int32_t(v) * cap / 1000 * cfg_.escFwdRangeUs / 1000; }
     int32_t belowUs(uint16_t v, uint16_t cap) const { return -(int32_t(v) * cap / 1000 * cfg_.escRevRangeUs / 1000); }
 
-    uint16_t throttlePulse(uint32_t nowMs, uint16_t throttle, uint16_t brake) {
+    uint16_t throttlePulse(uint32_t nowMs, uint16_t throttle, uint16_t brake, bool failsafeBrake) {
         int32_t us = 0;
-        if (cfg_.escMode == EscMode::FwdRev) {
+        if (failsafeBrake) {
+            // Whatever the gear: if the ESC might be reverse-armed (or is reversing), the
+            // guard pulse first, so the brake pulse is a brake and not reverse.
+            if (cfg_.guardEnabled && mightReverse_) us = cfg_.guardUs;
+            else us = belowUs(cfg_.failsafeBrake, 1000);
+        } else if (cfg_.escMode == EscMode::FwdRev) {
             // No ESC brake: LT coasts, reverse is immediate.
             if (brake == 0 && throttle > 0) us = gearRev_ ? belowUs(throttle, cfg_.revCap) : fwdUs(throttle, cfg_.fwdCap);
         } else if (!gearRev_) {
@@ -191,6 +211,8 @@ private:
     fpv::ser::Control cmd_{};
     uint32_t lastCmdMs_ = 0;
     bool haveCmd_ = false;
+    bool hostLost_ = false;  // a kFailsafe frame came after the last real command
+    uint16_t lastSeq_ = 0;
     bool needNeutral_ = true;
     bool gearRev_ = false;
 

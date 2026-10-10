@@ -43,6 +43,9 @@ inline drive::Config driveConfig() {
     // Must cover >= 2 PWM periods at the ESC rate (20 ms each at 50 Hz).
     c.commitMs = 60;
     c.failsafeMs = 150;
+    // Brake strength when the link drops while armed (permille of full brake; 0 = coast
+    // in neutral like before). Held until the link comes back.
+    c.failsafeBrake = 500;
     c.relatchMs = 1000;
     return c;
 }

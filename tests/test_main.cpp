@@ -324,12 +324,12 @@ static void testFailsafeAndArming() {
     s.hold(20, 1000, 0, false);
     CHECK_EQ(s.thr(), 200);  // 1000 * 40% cap * 500us
 
-    // Commands stop -> neutral within failsafeMs, steering centred.
+    // Commands stop -> failsafe brake within failsafeMs, steering centred.
     s.cmd(1000, 0, false, true, 800);
     CHECK(s.out.steerUs == 1500 + 320);
     s.now += 151;
     s.out = s.logic.update(s.now);
-    CHECK_EQ(s.thr(), 0);
+    CHECK_EQ(s.thr(), -250);  // 50% brake
     CHECK_EQ(s.out.steerUs, 1500);
     CHECK(s.out.flags & ser::kTelFailsafe);
 
@@ -337,10 +337,10 @@ static void testFailsafeAndArming() {
     s.hold(50, 1000, 0, false);
     CHECK_EQ(s.thr(), 200);
 
-    // Long outage: link returns with trigger held -> must release first.
+    // Long outage: brakes throughout; link returns with trigger held -> must release first.
     s.now += 1200;
     s.out = s.logic.update(s.now);
-    CHECK_EQ(s.thr(), 0);
+    CHECK_EQ(s.thr(), -250);
     s.hold(50, 1000, 0, false);
     CHECK_EQ(s.thr(), 0);
     CHECK(s.out.flags & ser::kTelNeedNeutral);
