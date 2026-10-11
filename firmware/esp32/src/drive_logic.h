@@ -58,6 +58,7 @@ struct Config {
     uint16_t guardUs = 40;       // forward guard pulse beyond neutral (must exceed the ESC deadband)
     bool guardEnabled = true;    // disable if the ESC has reverse turned off
     uint16_t commitMs = 60;      // pulse must be held this long before the ESC is assumed to have seen it
+    uint16_t revArmHoldMs = 100; // reverse sequence: brake and neutral each held this much longer
 
     uint16_t failsafeMs = 150;
     uint16_t failsafeBrake = 500;  // brake on link loss, permille of full brake. 0 = neutral
@@ -163,10 +164,20 @@ private:
         } else if (throttle > 0 && brake == 0) {
             // Reverse gear. LT coasts (the ESC has no brake while reversing).
             switch (esc_) {
-                case EscState::IdleArmed:
-                case EscState::Reversing: us = belowUs(throttle, cfg_.revCap); break;
-                case EscState::Braking: us = 0; break;  // hold neutral to arm reverse
+                // brake -> neutral -> reverse, each step held revArmHoldMs past the point the
+                // ESC has surely seen it: some ESCs want a firm brake and a clear neutral.
                 case EscState::IdleFwd: us = belowUs(cfg_.revArmBrake, 1000); break;  // brake first
+                case EscState::Braking:
+                    us = nowMs - escSinceMs_ < cfg_.revArmHoldMs ? belowUs(cfg_.revArmBrake, 1000) : 0;
+                    break;
+                case EscState::IdleArmed:
+                    // Straight after the arming brake: hold neutral a little longer. (After
+                    // reversing and letting go, reverse again at once.)
+                    us = escFrom_ == EscState::Braking && nowMs - escSinceMs_ < cfg_.revArmHoldMs
+                             ? 0
+                             : belowUs(throttle, cfg_.revCap);
+                    break;
+                case EscState::Reversing: us = belowUs(throttle, cfg_.revCap); break;
             }
         }
         trackEsc(nowMs, classify(us));
@@ -191,6 +202,7 @@ private:
         if (nowMs - pendingSinceMs_ < cfg_.commitMs) return;
 
         // Confirmed: the ESC has seen this pulse class for several frames.
+        const EscState before = esc_;
         switch (p) {
             case Pulse::Fwd:
                 esc_ = EscState::IdleFwd;
@@ -205,6 +217,10 @@ private:
                 if (esc_ == EscState::Braking || esc_ == EscState::Reversing) esc_ = EscState::IdleArmed;
                 break;
         }
+        if (esc_ != before) {
+            escFrom_ = before;
+            escSinceMs_ = nowMs;
+        }
     }
 
     Config cfg_;
@@ -217,6 +233,8 @@ private:
     bool gearRev_ = false;
 
     EscState esc_ = EscState::IdleFwd;
+    EscState escFrom_ = EscState::IdleFwd;  // state before the last change
+    uint32_t escSinceMs_ = 0;               // when esc_ last changed
     Pulse pending_ = Pulse::Neutral;
     uint32_t pendingSinceMs_ = 0;
     bool sawBelow_ = false;
