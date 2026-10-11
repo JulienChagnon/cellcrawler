@@ -22,7 +22,7 @@ constexpr uint32_t kEscPwmHz = 50;
 inline drive::Config driveConfig() {
     drive::Config c;
     c.steerCenterUs = 1500;
-    c.steerRangeUs = 400;
+    c.steerRangeUs = 500;  // full lock = 1000 / 2000 us. Lower it if the servo buzzes at full lock.
     c.steerInvert = false;
 
     c.escMode = drive::EscMode::FwdBrakeRev;
