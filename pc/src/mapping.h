@@ -67,11 +67,18 @@ public:
     DriveCommand update(const PadState& pad, float limiter = 1.0f) {
         DriveCommand cmd;
         if (!pad.connected) {
-            if (armed_) note("CONTROLLER LOST - DISARMED");
+            // Lost while armed: the truck brakes (failsafe) until the controller is back,
+            // then stays disarmed until Menu is pressed.
+            if (armed_) {
+                note("INPUT LOST - BRAKING");
+                lostArmed_ = true;
+            }
             armed_ = false;
             prev_ = 0;
+            if (lostArmed_) cmd.flags = fpv::ser::kFailsafe;
             return cmd;
         }
+        lostArmed_ = false;
         const uint16_t pressed = pad.buttons & ~prev_;
         prev_ = pad.buttons;
 
@@ -139,6 +146,7 @@ private:
     float scale_;
     int trim_ = 0;
     bool armed_ = false;
+    bool lostArmed_ = false;  // controller dropped out while armed
     bool gearRev_ = false;
     uint16_t prev_ = 0;
     std::string note_;
