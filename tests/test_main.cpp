@@ -542,7 +542,24 @@ static void testInversion() {
 // PC controller mapping
 
 static void testMapping() {
+    {
+        // Defaults: 60% throttle limit; limit and trim clamp.
+        pc::MappingConfig dc;
+        pc::Mapper dm(dc);
+        CHECK(dm.scale() == 0.6f);
+        dm.setScale(0.65f);
+        CHECK(dm.scale() == 0.65f);
+        dm.setScale(5);
+        CHECK(dm.scale() == 1.0f);
+        dm.setScale(0);
+        CHECK(dm.scale() == pc::kScaleMin);
+        dc.steerTrim = 999;
+        CHECK_EQ(pc::Mapper(dc).trim(), pc::kTrimMax);
+        dm.setTrim(-999);
+        CHECK_EQ(dm.trim(), -pc::kTrimMax);
+    }
     pc::MappingConfig mc;
+    mc.throttleScale = 1.0f;
     mc.steerExpo = 0;
     mc.steerDeadzone = 0;
     mc.triggerDeadzone = 0;

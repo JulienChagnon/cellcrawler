@@ -5,7 +5,7 @@
 //   LB          toggle gear F <-> R (only while RT is released)
 //   Left X      steering
 //   Menu/Start  arm           View/Back or B  disarm
-//   D-pad up/dn throttle scale +/-10%   D-pad l/r  steering trim
+//   D-pad up/dn throttle limit +/-10%   D-pad l/r  steering trim
 #pragma once
 #include <cmath>
 #include <cstdint>
@@ -44,8 +44,14 @@ struct MappingConfig {
     float steerExpo = 0.25f;  // 0 = linear, 1 = fully cubic
     bool steerInvert = false;
     float triggerDeadzone = 0.03f;
-    float throttleScale = 1.0f;  // initial live scale (fraction of the firmware cap)
+    float throttleScale = 0.6f;  // throttle limit, fraction of the firmware cap
+    int steerTrim = 0;           // steering units (1000 = full lock), saved in fpv.ini
 };
+
+// +/- half of full lock. Trim is added to the steering, so a big trim costs lock on the
+// other side; past ~150, re-seat the servo horn instead (docs/tuning.md, "Steering").
+constexpr int kTrimMax = 500;
+constexpr float kScaleMin = 0.1f;
 
 struct DriveCommand {
     int16_t steer = 0;
@@ -61,7 +67,10 @@ struct DriveCommand {
 
 class Mapper {
 public:
-    explicit Mapper(const MappingConfig& c) : cfg_(c), scale_(c.throttleScale) {}
+    explicit Mapper(const MappingConfig& c) : cfg_(c) {
+        setScale(c.throttleScale);
+        setTrim(c.steerTrim);
+    }
 
     // limiter: extra 0..1 throttle factor from link quality (1 = no limit).
     DriveCommand update(const PadState& pad, float limiter = 1.0f) {
@@ -99,10 +108,10 @@ public:
                 note(gearRev_ ? "GEAR: REVERSE" : "GEAR: FORWARD");
             }
         }
-        if (pressed & kDpadUp) scale_ = std::fmin(1.0f, scale_ + 0.1f);
-        if (pressed & kDpadDown) scale_ = std::fmax(0.1f, scale_ - 0.1f);
-        if (pressed & kDpadRight) trim_ = trim_ + 10 > 200 ? 200 : trim_ + 10;
-        if (pressed & kDpadLeft) trim_ = trim_ - 10 < -200 ? -200 : trim_ - 10;
+        if (pressed & kDpadUp) setScale(scale_ + 0.1f);
+        if (pressed & kDpadDown) setScale(scale_ - 0.1f);
+        if (pressed & kDpadRight) setTrim(trim_ + 10);
+        if (pressed & kDpadLeft) setTrim(trim_ - 10);
 
         float s = pad.lx;
         float a = std::fabs(s);
@@ -122,6 +131,20 @@ public:
         if (gearRev_) cmd.flags |= fpv::ser::kGearReverse;
         return cmd;
     }
+
+    // Switching input source: never carry the arm state over to the other device.
+    void disarm(const char* why) {
+        if (armed_) note(why);
+        armed_ = false;
+        lostArmed_ = false;
+        prev_ = 0;
+    }
+
+    void setScale(float s) {
+        s = std::round(s * 100.0f) / 100.0f;  // keep 0.6 + 0.1 at exactly 0.7
+        scale_ = s < kScaleMin ? kScaleMin : s > 1.0f ? 1.0f : s;
+    }
+    void setTrim(int t) { trim_ = t < -kTrimMax ? -kTrimMax : t > kTrimMax ? kTrimMax : t; }
 
     bool armed() const { return armed_; }
     bool gearReverse() const { return gearRev_; }
@@ -143,7 +166,7 @@ private:
     void note(const char* n) { note_ = n; }
 
     MappingConfig cfg_;
-    float scale_;
+    float scale_ = 1.0f;
     int trim_ = 0;
     bool armed_ = false;
     bool lostArmed_ = false;  // controller dropped out while armed
