@@ -13,6 +13,7 @@
 #include "fpv/passphrase.h"
 #include "fpv/serial_proto.h"
 #include "fpv/siphash.h"
+#include "keyboard.h"
 #include "mapping.h"
 
 static int failures = 0;
@@ -642,6 +643,108 @@ static void testMapping() {
     CHECK(!(c.flags & ser::kArmed));
 }
 
+static void testControllerLost() {
+    pc::MappingConfig mc;
+    pc::Mapper m(mc);
+    pc::PadState p;
+    p.connected = true;
+    p.buttons = pc::kStart;
+    m.update(p);  // arm
+    p.buttons = 0;
+    p.rt = 1;
+    CHECK(m.update(p).flags & ser::kArmed);
+
+    // Unplugged while armed: failsafe (the truck brakes) for as long as it's gone.
+    p = pc::PadState{};
+    for (int i = 0; i < 3; ++i) {
+        pc::DriveCommand c = m.update(p);
+        CHECK_EQ(c.flags, ser::kFailsafe);
+        CHECK_EQ(c.throttle, 0);
+    }
+    CHECK(!m.armed());
+
+    // Back: disarmed, failsafe cleared.
+    p.connected = true;
+    pc::DriveCommand c = m.update(p);
+    CHECK_EQ(c.flags & (ser::kFailsafe | ser::kArmed), 0);
+
+    // Unplugged while disarmed: plain disarmed command.
+    p = pc::PadState{};
+    CHECK_EQ(m.update(p).flags & ser::kFailsafe, 0);
+}
+
+static void testKeyboard() {
+    using namespace pc;
+    KeyboardPad kb;
+    uint64_t t = 1000000;
+    auto at = [&](uint32_t ms, uint16_t keys, bool focused = true) {
+        PadState p;
+        for (uint32_t i = 0; i < ms; ++i) p = kb.update(focused, keys, t += 1000);
+        return p;
+    };
+    CHECK(!kb.update(false, kKeyW, t).connected);  // window not focused = no controller
+    PadState p = at(1, 0);
+    CHECK(p.connected);
+
+    // W starts at 30% (below that the motor only whines), ramps to full over 0.3 s and
+    // drops to 0 at once on release.
+    p = at(1, kKeyW);
+    CHECK(p.rt >= 0.3f && p.rt < 0.31f);
+    p = at(149, kKeyW);
+    CHECK(p.rt > 0.6f && p.rt < 0.7f);
+    p = at(200, kKeyW);
+    CHECK(p.rt == 1.0f);
+    p = at(1, 0);
+    CHECK(p.rt == 0.0f);
+
+    // S brakes (ramp 0.15 s) and cancels W.
+    p = at(200, kKeyW | kKeyS);
+    CHECK(p.rt == 0.0f && p.lt == 1.0f);
+    p = at(1, 0);
+    CHECK(p.lt == 0.0f);
+
+    // A steers left over 0.2 s; letting go recentres within 0.1 s.
+    p = at(100, kKeyA);
+    CHECK(p.lx < -0.45f && p.lx > -0.55f);
+    p = at(150, kKeyA);
+    CHECK(p.lx == -1.0f);
+    p = at(60, 0);
+    CHECK(p.lx > -0.5f && p.lx < 0.0f);
+    p = at(50, 0);
+    CHECK(p.lx == 0.0f);
+    p = at(300, kKeyA | kKeyD);  // both: straight
+    CHECK(p.lx == 0.0f);
+
+    // Buttons.
+    p = at(1, kKeyArm | kKeyGear | kKeyUp);
+    CHECK(p.buttons == (kStart | kLB | kDpadUp));
+    p = at(1, kKeyDisarm);
+    CHECK(p.buttons == kBack);
+
+    // Through the Mapper: Enter arms, W drives, clicking away brakes (failsafe).
+    MappingConfig mc;
+    mc.throttleScale = 1.0f;
+    Mapper m(mc);
+    m.update(at(1, kKeyArm));
+    at(1, 0);
+    DriveCommand c = m.update(at(500, kKeyW));
+    CHECK(c.flags & ser::kArmed);
+    CHECK(c.throttle == 1000);
+    c = m.update(at(1, kKeyW, false));
+    CHECK_EQ(c.flags, ser::kFailsafe);
+    CHECK_EQ(c.throttle, 0);
+    c = m.update(at(1, 0));  // focus back: disarmed, no failsafe
+    CHECK_EQ(c.flags & (ser::kFailsafe | ser::kArmed), 0);
+
+    // Switching input source disarms.
+    m.update(at(1, kKeyArm));
+    m.update(at(1, 0));
+    CHECK(m.armed());
+    m.disarm("switch");
+    CHECK(!m.armed());
+    CHECK_EQ(m.update(at(1, 0)).flags & ser::kArmed, 0);
+}
+
 static void testSteerExpoDeadzone() {
     pc::MappingConfig mc;
     mc.steerDeadzone = 0.1f;
@@ -678,6 +781,8 @@ int main() {
     testFwdRevMode();
     testInversion();
     testMapping();
+    testControllerLost();
+    testKeyboard();
     testSteerExpoDeadzone();
     if (failures) {
         std::printf("%d check(s) failed\n", failures);
