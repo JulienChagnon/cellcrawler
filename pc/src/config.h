@@ -15,6 +15,7 @@ struct Config {
     fpv::SipKey key;
     std::string serialPort = "COM3";
 
+    bool keyboard = false;  // start with keyboard (WASD) driving instead of the controller
     MappingConfig mapping;
     uint32_t rttLimitMs = 250;  // above this, throttle is halved
 

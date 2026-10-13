@@ -48,6 +48,11 @@ bool loadConfig(const std::string& path, Config& c) {
         else if (k == "port") c.port = uint16_t(i);
         else if (k == "passphrase" || k == "key") c.secret = v;
         else if (k == "serial_port") c.serialPort = v;
+        else if (k == "input") {
+            if (v == "keyboard") c.keyboard = true;
+            else if (v == "controller") c.keyboard = false;
+            else { std::fprintf(stderr, "%s:%d: input must be controller or keyboard\n", path.c_str(), lineNo); return false; }
+        }
         else if (k == "steer_deadzone") c.mapping.steerDeadzone = f;
         else if (k == "steer_expo") c.mapping.steerExpo = f;
         else if (k == "steer_invert") c.mapping.steerInvert = toBool(v);
