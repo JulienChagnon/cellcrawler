@@ -33,8 +33,10 @@ inline drive::Config driveConfig() {
     c.escDeadbandUs = 25;
 
     // Hard limits (permille of full throttle). Start low, raise after testing.
-    c.fwdCap = 400;
-    c.revCap = 250;
+    // The PC app's throttle limit (default 60%) scales these, so 1000 makes it a plain
+    // percentage of full power, both ways.
+    c.fwdCap = 1000;
+    c.revCap = 1000;
     c.brakeCap = 1000;
 
     c.revArmBrake = 300;

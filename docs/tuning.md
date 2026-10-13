@@ -25,8 +25,14 @@ ESP32 plugged straight into the PC) unless noted.
 ## Throttle caps
 
 `fwdCap` / `revCap` / `brakeCap` in `config.h` are **hard limits**, in permille of full
-throttle. The PC can never exceed them. The D-pad scale on the PC is a fraction *of* these
-caps. Start at 400/250 and raise slowly.
+throttle. The PC can never exceed them. They're set to 1000 / 1000 / 1000, so the PC's
+**throttle limit** (Tab menu, D-pad or arrow ↑ / ↓, default 60 %, saved in `fpv.ini` as
+`throttle_scale`) is a plain percentage of full power forward. Lower the caps here if you
+want a limit nobody can raise from the PC.
+
+A brushed motor whines without moving at low throttle: the ESC is already pulsing current
+through it, just not enough to turn the wheels. That's normal. Keyboard throttle starts at
+30 % for this reason.
 
 ## PWM rate (latency)
 
