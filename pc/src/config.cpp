@@ -53,6 +53,7 @@ bool loadConfig(const std::string& path, Config& c) {
         else if (k == "steer_invert") c.mapping.steerInvert = toBool(v);
         else if (k == "trigger_deadzone") c.mapping.triggerDeadzone = f;
         else if (k == "throttle_scale") c.mapping.throttleScale = f;
+        else if (k == "steer_trim") c.mapping.steerTrim = i;
         else if (k == "rtt_limit_ms") c.rttLimitMs = uint32_t(i);
         else if (k == "hw_decode") c.hwDecode = toBool(v);
         else if (k == "fullscreen") c.fullscreen = toBool(v);
@@ -71,6 +72,42 @@ bool loadConfig(const std::string& path, Config& c) {
         }
     }
     return true;
+}
+
+bool saveConfigValue(const std::string& path, const std::string& key, const std::string& value) {
+    std::ifstream in(path, std::ios::binary);
+    if (!in) return false;
+    std::stringstream ss;
+    ss << in.rdbuf();
+    in.close();
+    const std::string text = ss.str();
+    const std::string nl = text.find("\r\n") != std::string::npos ? "\r\n" : "\n";
+
+    std::string out;
+    bool found = false;
+    size_t pos = 0;
+    while (pos < text.size()) {
+        size_t end = text.find('\n', pos);
+        std::string line = text.substr(pos, end == std::string::npos ? std::string::npos : end - pos);
+        pos = end == std::string::npos ? text.size() : end + 1;
+        if (!line.empty() && line.back() == '\r') line.pop_back();
+        std::string body = line.substr(0, line.find_first_of(";#"));
+        size_t eq = body.find('=');
+        if (!found && eq != std::string::npos && trim(body.substr(0, eq)) == key) {
+            line = key + " = " + value;
+            found = true;
+        }
+        out += line + nl;
+    }
+    if (!found) out += key + " = " + value + nl;
+
+    const std::string tmp = path + ".tmp";
+    {
+        std::ofstream o(tmp, std::ios::binary | std::ios::trunc);
+        if (!o || !(o << out)) return false;
+    }
+    return std::rename(tmp.c_str(), path.c_str()) == 0 ||
+           (std::remove(path.c_str()) == 0 && std::rename(tmp.c_str(), path.c_str()) == 0);
 }
 
 }  // namespace pc

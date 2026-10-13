@@ -30,4 +30,8 @@ struct Config {
 // Loads key=value lines (';' or '#' comments). Returns false and prints why on error.
 bool loadConfig(const std::string& path, Config& out);
 
+// Sets key = value in the file, keeping everything else (comments included). Appends the
+// line if the key isn't there. For settings changed live (throttle limit, steering trim).
+bool saveConfigValue(const std::string& path, const std::string& key, const std::string& value);
+
 }  // namespace pc
