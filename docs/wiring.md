@@ -1,5 +1,25 @@
 # Wiring
 
+## The truck
+
+**ECX 1/10 AMP MT 2WD Monster Truck Kit, INT version**
+([ECX03034I](https://www.horizonhobby.com/eu/en/product/ecx-1-10-amp-mt-2wd-monster-truck-kit-int/ECX03034I.html),
+discontinued).
+
+| Part | Stock |
+|---|---|
+| Motor | 540-size brushed, 20 turns. Gearing: 18T pinion, 87T spur |
+| ESC | ECX13006, combined waterproof ESC + 2.4 GHz receiver ("2-in-1"). No LiPo cutoff |
+| Servo | ECX waterproof steering servo, slow. Treat it as analog: keep `kSteerPwmHz = 50` |
+| Battery | Dynamite 7.2 V 1800 mAh 6-cell NiMH |
+| Radio | ECX 2.4 GHz 2-channel |
+
+A 540 20T motor is easy on an ESC: any brushed ESC rated for 540 motors of 12T or more
+on 6-cell NiMH or 2S LiPo will do. If you switch to LiPo, the replacement ESC must have a
+LiPo cutoff, because the stock one doesn't.
+
+## Connections
+
 ```
                          ┌──────────── Mi A3 ────────────┐
                          │  USB-C (OTG adapter)           │
