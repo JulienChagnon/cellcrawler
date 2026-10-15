@@ -3,6 +3,9 @@
 Drive an RC truck from a Windows PC with an Xbox controller, with live video and battery
 telemetry, over the cellular network. Built for **lowest possible latency**.
 
+Truck: **ECX 1/10 AMP MT 2WD** (ECX03034I), 540 20T brushed motor, 7.2 V 6-cell NiMH pack.
+The stock ESC/receiver is replaced by a standalone brushed ESC (see docs/wiring.md).
+
 ```
 Xbox pad ──XInput 1 kHz──▶ fpv-pc (C++) ══UDP control ≥100 Hz══▶ phone app (C++) ──USB serial──▶ ESP32 ──PWM──▶ servo / ESC
                            fpv-pc      ◀══UDP H.264 video═══════ camera → HW encoder (zero copy)
