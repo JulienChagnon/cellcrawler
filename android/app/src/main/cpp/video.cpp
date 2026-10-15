@@ -12,6 +12,8 @@
 #include <cmath>
 #include <cstdlib>
 #include <sstream>
+#include <string>
+#include <vector>
 
 #include "common.h"
 
@@ -42,113 +44,163 @@ void onSessionNoop(void*, ACameraCaptureSession*) {}
 
 struct CameraChoice {
     std::string id;
+    bool back = false;
+    bool color = false;   // a normal colour camera (not depth-only or monochrome)
+    float fovDeg = 0;     // horizontal field of view at zoomMin
+    float zoomMin = 1;    // < 1: a logical camera that reaches its ultra-wide by zooming out
+    int maxFps = 0;
     int width = 0, height = 0;
+    int recW = 0, recH = 0;  // phone recording: largest 16:9 output up to 1920x1080
     int32_t fpsLo = 0, fpsHi = 0;
     bool boottime = false;
     bool canFocus = false;
     std::string desc;
 };
 
-// Picks the camera, output size and fps range closest to what was asked for.
-bool chooseCamera(ACameraManager* mgr, const VideoConfig& cfg, CameraChoice& out) {
+// Every camera id worth trying: the listed ones, then "0".."99", because some vendors leave
+// the extra lenses off the list but still answer for them (the Mi A3's ultra-wide is "21").
+std::vector<std::string> cameraIds(ACameraManager* mgr) {
+    std::vector<std::string> out;
     ACameraIdList* ids = nullptr;
-    if (ACameraManager_getCameraIdList(mgr, &ids) != ACAMERA_OK || !ids) return false;
-    bool found = false;
-    for (int i = 0; i < ids->numCameras && !found; ++i) {
-        const char* id = ids->cameraIds[i];
-        ACameraMetadata* ch = nullptr;
-        if (ACameraManager_getCameraCharacteristics(mgr, id, &ch) != ACAMERA_OK) continue;
-        ACameraMetadata_const_entry e{};
-        bool back = ACameraMetadata_getConstEntry(ch, ACAMERA_LENS_FACING, &e) == ACAMERA_OK &&
-                    e.data.u8[0] == ACAMERA_LENS_FACING_BACK;
-        bool wanted = cfg.cameraId.empty() ? back : cfg.cameraId == id;
-        if (!wanted) {
-            ACameraMetadata_free(ch);
-            continue;
-        }
-        out.id = id;
-
-        // Output size: exact match, else the closest 16:9 size no wider than 1920.
-        int bestW = 0, bestH = 0;
-        if (ACameraMetadata_getConstEntry(ch, ACAMERA_SCALER_AVAILABLE_STREAM_CONFIGURATIONS, &e) == ACAMERA_OK) {
-            int bestDiff = 1 << 30;
-            for (uint32_t k = 0; k + 3 < e.count; k += 4) {
-                int32_t fmt = e.data.i32[k], w = e.data.i32[k + 1], h = e.data.i32[k + 2], input = e.data.i32[k + 3];
-                if (fmt != kFormatPrivate || input) continue;
-                if (w == cfg.width && h == cfg.height) {
-                    bestW = w;
-                    bestH = h;
-                    break;
-                }
-                if (w * 9 == h * 16 && w <= 1920 && std::abs(w - cfg.width) < bestDiff) {
-                    bestDiff = std::abs(w - cfg.width);
-                    bestW = w;
-                    bestH = h;
-                }
-            }
-        }
-        if (!bestW) {
-            bestW = 1280;
-            bestH = 720;
-        }
-        out.width = bestW;
-        out.height = bestH;
-
-        // FPS: prefer a fixed [fps, fps] range so exposure can't stretch frame time.
-        out.fpsLo = out.fpsHi = 30;
-        if (ACameraMetadata_getConstEntry(ch, ACAMERA_CONTROL_AE_AVAILABLE_TARGET_FPS_RANGES, &e) == ACAMERA_OK) {
-            int32_t bLo = 0, bHi = 0;
-            for (uint32_t k = 0; k + 1 < e.count; k += 2) {
-                int32_t lo = e.data.i32[k], hi = e.data.i32[k + 1];
-                if (hi > cfg.fps) continue;
-                if (hi > bHi || (hi == bHi && lo > bLo)) {
-                    bLo = lo;
-                    bHi = hi;
-                }
-            }
-            if (bHi) {
-                out.fpsLo = bLo;
-                out.fpsHi = bHi;
-            }
-        }
-        out.boottime = ACameraMetadata_getConstEntry(ch, ACAMERA_SENSOR_INFO_TIMESTAMP_SOURCE, &e) == ACAMERA_OK &&
-                       e.data.u8[0] == ACAMERA_SENSOR_INFO_TIMESTAMP_SOURCE_REALTIME;
-        out.canFocus = ACameraMetadata_getConstEntry(ch, ACAMERA_LENS_INFO_MINIMUM_FOCUS_DISTANCE, &e) == ACAMERA_OK &&
-                       e.count && e.data.f[0] > 0;
-        std::ostringstream d;
-        d << "cam " << id << " " << out.width << "x" << out.height << " @" << out.fpsLo << "-" << out.fpsHi;
-        out.desc = d.str();
-        found = true;
-        ACameraMetadata_free(ch);
+    if (ACameraManager_getCameraIdList(mgr, &ids) == ACAMERA_OK && ids) {
+        for (int i = 0; i < ids->numCameras; ++i) out.emplace_back(ids->cameraIds[i]);
+        ACameraManager_deleteCameraIdList(ids);
     }
-    ACameraManager_deleteCameraIdList(ids);
-    return found;
+    for (int i = 0; i < 100; ++i) {
+        std::string id = std::to_string(i);
+        if (std::find(out.begin(), out.end(), id) == out.end()) out.push_back(id);
+    }
+    return out;
+}
+
+// Reads one camera's characteristics and picks the output size and fps range closest to
+// what was asked for. False if the camera doesn't exist.
+bool describeCamera(ACameraManager* mgr, const std::string& id, const VideoConfig& cfg, CameraChoice& out) {
+    ACameraMetadata* ch = nullptr;
+    if (ACameraManager_getCameraCharacteristics(mgr, id.c_str(), &ch) != ACAMERA_OK || !ch) return false;
+    out = CameraChoice{};
+    out.id = id;
+    ACameraMetadata_const_entry e{};
+    out.back = ACameraMetadata_getConstEntry(ch, ACAMERA_LENS_FACING, &e) == ACAMERA_OK &&
+               e.data.u8[0] == ACAMERA_LENS_FACING_BACK;
+
+    bool compatible = false, mono = false;
+    if (ACameraMetadata_getConstEntry(ch, ACAMERA_REQUEST_AVAILABLE_CAPABILITIES, &e) == ACAMERA_OK)
+        for (uint32_t k = 0; k < e.count; ++k) {
+            compatible |= e.data.u8[k] == ACAMERA_REQUEST_AVAILABLE_CAPABILITIES_BACKWARD_COMPATIBLE;
+            mono |= e.data.u8[k] == ACAMERA_REQUEST_AVAILABLE_CAPABILITIES_MONOCHROME;
+        }
+    out.color = compatible && !mono;
+
+    if (ACameraMetadata_getConstEntry(ch, ACAMERA_CONTROL_ZOOM_RATIO_RANGE, &e) == ACAMERA_OK && e.count >= 2 &&
+        e.data.f[0] > 0.1f && e.data.f[0] < 1.0f)
+        out.zoomMin = e.data.f[0];
+    float focal = 0;
+    if (ACameraMetadata_getConstEntry(ch, ACAMERA_LENS_INFO_AVAILABLE_FOCAL_LENGTHS, &e) == ACAMERA_OK)
+        for (uint32_t k = 0; k < e.count; ++k)
+            if (e.data.f[k] > 0 && (focal == 0 || e.data.f[k] < focal)) focal = e.data.f[k];
+    if (focal > 0 && ACameraMetadata_getConstEntry(ch, ACAMERA_SENSOR_INFO_PHYSICAL_SIZE, &e) == ACAMERA_OK &&
+        e.count >= 2)
+        out.fovDeg = float(2 * std::atan(e.data.f[0] / (2 * focal * out.zoomMin)) * 180 / M_PI);
+
+    // Output size: exact match, else the closest 16:9 size no wider than 1920.
+    if (ACameraMetadata_getConstEntry(ch, ACAMERA_SCALER_AVAILABLE_STREAM_CONFIGURATIONS, &e) == ACAMERA_OK) {
+        int bestDiff = 1 << 30;
+        for (uint32_t k = 0; k + 3 < e.count; k += 4) {
+            int32_t fmt = e.data.i32[k], w = e.data.i32[k + 1], h = e.data.i32[k + 2], input = e.data.i32[k + 3];
+            if (fmt != kFormatPrivate || input) continue;
+            if (w == cfg.width && h == cfg.height) {
+                out.width = w;
+                out.height = h;
+                break;
+            }
+            if (w * 9 == h * 16 && w <= 1920 && std::abs(w - cfg.width) < bestDiff) {
+                bestDiff = std::abs(w - cfg.width);
+                out.width = w;
+                out.height = h;
+            }
+        }
+    }
+    if (!out.width) {
+        out.width = 1280;
+        out.height = 720;
+    }
+    if (ACameraMetadata_getConstEntry(ch, ACAMERA_SCALER_AVAILABLE_STREAM_CONFIGURATIONS, &e) == ACAMERA_OK)
+        for (uint32_t k = 0; k + 3 < e.count; k += 4) {
+            int32_t fmt = e.data.i32[k], w = e.data.i32[k + 1], h = e.data.i32[k + 2], input = e.data.i32[k + 3];
+            if (fmt == kFormatPrivate && !input && w * 9 == h * 16 && w <= 1920 && w > out.recW) {
+                out.recW = w;
+                out.recH = h;
+            }
+        }
+    if (!out.recW) {
+        out.recW = out.width;
+        out.recH = out.height;
+    }
+
+    // FPS: prefer a fixed [fps, fps] range so exposure can't stretch frame time.
+    out.fpsLo = out.fpsHi = 30;
+    if (ACameraMetadata_getConstEntry(ch, ACAMERA_CONTROL_AE_AVAILABLE_TARGET_FPS_RANGES, &e) == ACAMERA_OK) {
+        int32_t bLo = 0, bHi = 0;
+        for (uint32_t k = 0; k + 1 < e.count; k += 2) {
+            int32_t lo = e.data.i32[k], hi = e.data.i32[k + 1];
+            out.maxFps = std::max(out.maxFps, int(hi));
+            if (hi > cfg.fps) continue;
+            if (hi > bHi || (hi == bHi && lo > bLo)) {
+                bLo = lo;
+                bHi = hi;
+            }
+        }
+        if (bHi) {
+            out.fpsLo = bLo;
+            out.fpsHi = bHi;
+        }
+    }
+    out.boottime = ACameraMetadata_getConstEntry(ch, ACAMERA_SENSOR_INFO_TIMESTAMP_SOURCE, &e) == ACAMERA_OK &&
+                   e.data.u8[0] == ACAMERA_SENSOR_INFO_TIMESTAMP_SOURCE_REALTIME;
+    out.canFocus = ACameraMetadata_getConstEntry(ch, ACAMERA_LENS_INFO_MINIMUM_FOCUS_DISTANCE, &e) == ACAMERA_OK &&
+                   e.count && e.data.f[0] > 0;
+    ACameraMetadata_free(ch);
+
+    std::ostringstream d;
+    d << "cam " << id << " " << out.width << "x" << out.height << " @" << out.fpsLo << "-" << out.fpsHi;
+    if (out.fovDeg > 0) d << ", " << int(std::lround(out.fovDeg)) << " deg";
+    if (out.zoomMin < 1) d << " (zoom " << out.zoomMin << "x)";
+    out.desc = d.str();
+    return true;
+}
+
+// Cameras to try, best first. A camera id in the settings: just that one. Blank: every
+// colour back camera, widest view first (the ultra-wide, if the phone lets apps use it).
+std::vector<CameraChoice> chooseCameras(ACameraManager* mgr, const VideoConfig& cfg) {
+    std::vector<CameraChoice> out;
+    for (const std::string& id : cameraIds(mgr)) {
+        CameraChoice c;
+        if (!describeCamera(mgr, id, cfg, c)) continue;
+        if (!cfg.cameraId.empty() ? id == cfg.cameraId : c.back && c.color) out.push_back(c);
+    }
+    std::stable_sort(out.begin(), out.end(),
+                     [](const CameraChoice& a, const CameraChoice& b) { return a.fovDeg > b.fovDeg; });
+    return out;
 }
 
 }  // namespace
 
 std::string VideoPipeline::listCameras() {
     ACameraManager* mgr = ACameraManager_create();
-    ACameraIdList* ids = nullptr;
+    VideoConfig cfg;
+    const std::vector<CameraChoice> picked = chooseCameras(mgr, cfg);
     std::ostringstream s;
-    if (ACameraManager_getCameraIdList(mgr, &ids) == ACAMERA_OK && ids) {
-        for (int i = 0; i < ids->numCameras; ++i) {
-            ACameraMetadata* ch = nullptr;
-            if (ACameraManager_getCameraCharacteristics(mgr, ids->cameraIds[i], &ch) != ACAMERA_OK) continue;
-            ACameraMetadata_const_entry e{};
-            const char* facing = "?";
-            if (ACameraMetadata_getConstEntry(ch, ACAMERA_LENS_FACING, &e) == ACAMERA_OK)
-                facing = e.data.u8[0] == ACAMERA_LENS_FACING_BACK ? "back" : e.data.u8[0] == ACAMERA_LENS_FACING_FRONT ? "front" : "ext";
-            s << ids->cameraIds[i] << ": " << facing;
-            if (ACameraMetadata_getConstEntry(ch, ACAMERA_LENS_INFO_AVAILABLE_FOCAL_LENGTHS, &e) == ACAMERA_OK && e.count)
-                s << ", " << e.data.f[0] << "mm";
-            int maxFps = 0;
-            if (ACameraMetadata_getConstEntry(ch, ACAMERA_CONTROL_AE_AVAILABLE_TARGET_FPS_RANGES, &e) == ACAMERA_OK)
-                for (uint32_t k = 1; k < e.count; k += 2) maxFps = std::max(maxFps, int(e.data.i32[k]));
-            s << ", max " << maxFps << "fps\n";
-            ACameraMetadata_free(ch);
-        }
-        ACameraManager_deleteCameraIdList(ids);
+    for (const std::string& id : cameraIds(mgr)) {
+        CameraChoice c;
+        if (!describeCamera(mgr, id, cfg, c)) continue;
+        s << id << ": " << (c.back ? "back" : "front/ext");
+        if (c.fovDeg > 0) s << ", " << int(std::lround(c.fovDeg)) << " deg";
+        if (c.zoomMin < 1) s << " (zoom " << c.zoomMin << "x)";
+        s << ", max " << c.maxFps << "fps";
+        if (!c.color) s << ", not a colour camera";
+        if (!picked.empty() && picked.front().id == id) s << "  <- used when blank";
+        s << "\n";
     }
     ACameraManager_delete(mgr);
     return s.str();
@@ -164,14 +216,27 @@ bool VideoPipeline::start(const VideoConfig& cfg, FrameSink sink) {
     csd_.clear();
 
     camMgr_ = ACameraManager_create();
+    // Open the first camera that lets us: a vendor may describe its ultra-wide but refuse
+    // to open it for apps other than its own.
+    ACameraDevice_StateCallbacks devCb{this, onDeviceDisconnected, onDeviceError};
     CameraChoice cam;
-    if (!chooseCamera(camMgr_, cfg_, cam)) {
-        LOGE("video: no suitable camera");
+    for (const CameraChoice& c : chooseCameras(camMgr_, cfg_)) {
+        camera_status_t st = ACameraManager_openCamera(camMgr_, c.id.c_str(), &devCb, &camDev_);
+        if (st == ACAMERA_OK) {
+            cam = c;
+            break;
+        }
+        LOGW("video: openCamera(%s) failed: %d, trying the next camera", c.id.c_str(), st);
+        camDev_ = nullptr;
+    }
+    if (!camDev_) {
+        LOGE("video: no camera could be opened (camera permission granted?)");
         stop();
         return false;
     }
     cfg_.width = cam.width;
     cfg_.height = cam.height;
+    cfg_.fps = cam.fpsHi;  // the ultra-wide may top out below what was asked for
     timestampsBoottime_ = cam.boottime;
     camInfo_ = cam.desc;
     LOGI("video: %s, timestamps %s", cam.desc.c_str(), cam.boottime ? "boottime" : "monotonic");
@@ -183,50 +248,19 @@ bool VideoPipeline::start(const VideoConfig& cfg, FrameSink sink) {
     running_ = true;
     thread_ = std::thread(&VideoPipeline::outputLoop, this);
 
-    // Camera into the encoder surface.
-    ACameraDevice_StateCallbacks devCb{this, onDeviceDisconnected, onDeviceError};
-    camera_status_t st = ACameraManager_openCamera(camMgr_, cam.id.c_str(), &devCb, &camDev_);
-    if (st != ACAMERA_OK) {
-        LOGE("video: openCamera(%s) failed: %d (camera permission granted?)", cam.id.c_str(), st);
-        stop();
-        return false;
+    // Camera into the encoder surface (and the recorder's, if one is set).
+    fpsLo_ = cam.fpsLo;
+    fpsHi_ = cam.fpsHi;
+    zoomMin_ = cam.zoomMin;
+    canFocus_ = cam.canFocus;
+    recW_ = cam.recW;
+    recH_ = cam.recH;
+    bool ok;
+    {
+        std::lock_guard<std::mutex> lk(camMu_);
+        ok = startSessionLocked();
     }
-    ACaptureSessionOutputContainer_create(&outputs_);
-    ACaptureSessionOutput_create(window_, &sessOut_);
-    ACaptureSessionOutputContainer_add(outputs_, sessOut_);
-    ACameraOutputTarget_create(window_, &target_);
-    ACameraDevice_createCaptureRequest(camDev_, TEMPLATE_RECORD, &request_);
-    ACaptureRequest_addTarget(request_, target_);
-
-    int32_t range[2] = {cam.fpsLo, cam.fpsHi};
-    ACaptureRequest_setEntry_i32(request_, ACAMERA_CONTROL_AE_TARGET_FPS_RANGE, 2, range);
-    // Electronic stabilisation buffers frames: off. (Optical stabilisation is free, left on.)
-    uint8_t v = ACAMERA_CONTROL_VIDEO_STABILIZATION_MODE_OFF;
-    ACaptureRequest_setEntry_u8(request_, ACAMERA_CONTROL_VIDEO_STABILIZATION_MODE, 1, &v);
-    v = ACAMERA_NOISE_REDUCTION_MODE_FAST;
-    ACaptureRequest_setEntry_u8(request_, ACAMERA_NOISE_REDUCTION_MODE, 1, &v);
-    v = ACAMERA_EDGE_MODE_FAST;
-    ACaptureRequest_setEntry_u8(request_, ACAMERA_EDGE_MODE, 1, &v);
-    if (cam.canFocus && cfg_.focusInfinity) {
-        v = ACAMERA_CONTROL_AF_MODE_OFF;
-        ACaptureRequest_setEntry_u8(request_, ACAMERA_CONTROL_AF_MODE, 1, &v);
-        float inf = 0.0f;
-        ACaptureRequest_setEntry_float(request_, ACAMERA_LENS_FOCUS_DISTANCE, 1, &inf);
-    } else if (cam.canFocus) {
-        v = ACAMERA_CONTROL_AF_MODE_CONTINUOUS_VIDEO;
-        ACaptureRequest_setEntry_u8(request_, ACAMERA_CONTROL_AF_MODE, 1, &v);
-    }
-
-    ACameraCaptureSession_stateCallbacks sessCb{this, onSessionNoop, onSessionNoop, onSessionNoop};
-    st = ACameraDevice_createCaptureSession(camDev_, outputs_, &sessCb, &session_);
-    if (st != ACAMERA_OK) {
-        LOGE("video: createCaptureSession failed: %d", st);
-        stop();
-        return false;
-    }
-    st = ACameraCaptureSession_setRepeatingRequest(session_, nullptr, 1, &request_, nullptr);
-    if (st != ACAMERA_OK) {
-        LOGE("video: setRepeatingRequest failed: %d", st);
+    if (!ok) {
         stop();
         return false;
     }
@@ -286,22 +320,116 @@ bool VideoPipeline::openEncoder() {
     return true;
 }
 
-void VideoPipeline::stop() {
-    running_ = false;
+VideoPipeline::~VideoPipeline() {
+    stop();
+    if (recWindow_) ANativeWindow_release(recWindow_);
+}
+
+bool VideoPipeline::startSessionLocked() {
+    ACaptureSessionOutputContainer_create(&outputs_);
+    ACaptureSessionOutput_create(window_, &sessOut_);
+    ACaptureSessionOutputContainer_add(outputs_, sessOut_);
+    ACameraOutputTarget_create(window_, &target_);
+    if (recWindow_) {
+        ACaptureSessionOutput_create(recWindow_, &recOut_);
+        ACaptureSessionOutputContainer_add(outputs_, recOut_);
+        ACameraOutputTarget_create(recWindow_, &recTarget_);
+    }
+    ACameraDevice_createCaptureRequest(camDev_, TEMPLATE_RECORD, &request_);
+    ACaptureRequest_addTarget(request_, target_);
+    if (recTarget_ && recOn_) ACaptureRequest_addTarget(request_, recTarget_);
+
+    int32_t range[2] = {fpsLo_, fpsHi_};
+    ACaptureRequest_setEntry_i32(request_, ACAMERA_CONTROL_AE_TARGET_FPS_RANGE, 2, range);
+    if (zoomMin_ < 1) ACaptureRequest_setEntry_float(request_, ACAMERA_CONTROL_ZOOM_RATIO, 1, &zoomMin_);
+    // Electronic stabilisation buffers frames: off. (Optical stabilisation is free, left on.)
+    uint8_t v = ACAMERA_CONTROL_VIDEO_STABILIZATION_MODE_OFF;
+    ACaptureRequest_setEntry_u8(request_, ACAMERA_CONTROL_VIDEO_STABILIZATION_MODE, 1, &v);
+    v = ACAMERA_NOISE_REDUCTION_MODE_FAST;
+    ACaptureRequest_setEntry_u8(request_, ACAMERA_NOISE_REDUCTION_MODE, 1, &v);
+    v = ACAMERA_EDGE_MODE_FAST;
+    ACaptureRequest_setEntry_u8(request_, ACAMERA_EDGE_MODE, 1, &v);
+    if (canFocus_ && cfg_.focusInfinity) {
+        v = ACAMERA_CONTROL_AF_MODE_OFF;
+        ACaptureRequest_setEntry_u8(request_, ACAMERA_CONTROL_AF_MODE, 1, &v);
+        float inf = 0.0f;
+        ACaptureRequest_setEntry_float(request_, ACAMERA_LENS_FOCUS_DISTANCE, 1, &inf);
+    } else if (canFocus_) {
+        v = ACAMERA_CONTROL_AF_MODE_CONTINUOUS_VIDEO;
+        ACaptureRequest_setEntry_u8(request_, ACAMERA_CONTROL_AF_MODE, 1, &v);
+    }
+
+    ACameraCaptureSession_stateCallbacks sessCb{this, onSessionNoop, onSessionNoop, onSessionNoop};
+    camera_status_t st = ACameraDevice_createCaptureSession(camDev_, outputs_, &sessCb, &session_);
+    if (st != ACAMERA_OK) {
+        LOGE("video: createCaptureSession failed: %d", st);
+        session_ = nullptr;
+        return false;
+    }
+    st = ACameraCaptureSession_setRepeatingRequest(session_, nullptr, 1, &request_, nullptr);
+    if (st != ACAMERA_OK) {
+        LOGE("video: setRepeatingRequest failed: %d", st);
+        return false;
+    }
+    return true;
+}
+
+void VideoPipeline::closeSessionLocked() {
     if (session_) {
         ACameraCaptureSession_stopRepeating(session_);
         ACameraCaptureSession_close(session_);
         session_ = nullptr;
     }
-    if (camDev_) {
-        ACameraDevice_close(camDev_);
-        camDev_ = nullptr;
-    }
-    if (thread_.joinable()) thread_.join();
     if (request_) { ACaptureRequest_free(request_); request_ = nullptr; }
     if (target_) { ACameraOutputTarget_free(target_); target_ = nullptr; }
+    if (recTarget_) { ACameraOutputTarget_free(recTarget_); recTarget_ = nullptr; }
     if (outputs_) { ACaptureSessionOutputContainer_free(outputs_); outputs_ = nullptr; }
     if (sessOut_) { ACaptureSessionOutput_free(sessOut_); sessOut_ = nullptr; }
+    if (recOut_) { ACaptureSessionOutput_free(recOut_); recOut_ = nullptr; }
+}
+
+bool VideoPipeline::setRecordSurface(ANativeWindow* w) {
+    std::lock_guard<std::mutex> lk(camMu_);
+    if (w) ANativeWindow_acquire(w);
+    recOn_ = false;
+    const bool live = session_ != nullptr;
+    if (live) closeSessionLocked();
+    if (recWindow_) ANativeWindow_release(recWindow_);
+    recWindow_ = w;
+    LOGI("video: record output %s", w ? "added" : "removed");
+    if (live && !startSessionLocked()) {
+        failed_ = true;  // the engine restarts the pipeline (without the record output if it's gone)
+        return false;
+    }
+    return true;
+}
+
+bool VideoPipeline::setRecording(bool on) {
+    std::lock_guard<std::mutex> lk(camMu_);
+    recOn_ = on && recWindow_;
+    if (!session_ || !request_ || !recTarget_) return !on || recOn_;
+    if (recOn_) ACaptureRequest_addTarget(request_, recTarget_);
+    else ACaptureRequest_removeTarget(request_, recTarget_);
+    return ACameraCaptureSession_setRepeatingRequest(session_, nullptr, 1, &request_, nullptr) == ACAMERA_OK;
+}
+
+void VideoPipeline::recordSize(int& w, int& h, int& fps) const {
+    w = recW_;
+    h = recH_;
+    fps = fpsHi_;
+}
+
+void VideoPipeline::stop() {
+    running_ = false;
+    {
+        std::lock_guard<std::mutex> lk(camMu_);
+        closeSessionLocked();
+        if (camDev_) {
+            ACameraDevice_close(camDev_);
+            camDev_ = nullptr;
+        }
+    }
+    if (thread_.joinable()) thread_.join();
     if (codec_) {
         AMediaCodec_stop(codec_);
         AMediaCodec_delete(codec_);

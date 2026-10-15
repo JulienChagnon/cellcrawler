@@ -46,7 +46,7 @@ public class MainActivity extends Activity {
         height = field(root, "Video height", InputType.TYPE_CLASS_NUMBER);
         fps = field(root, "FPS", InputType.TYPE_CLASS_NUMBER);
         kbps = field(root, "Max bitrate (kbps)", InputType.TYPE_CLASS_NUMBER);
-        cameraId = field(root, "Camera id (blank = main back camera)", InputType.TYPE_CLASS_TEXT);
+        cameraId = field(root, "Camera id (blank = widest back camera, the 0.6x one if the phone allows)", InputType.TYPE_CLASS_TEXT);
         forceCellular = new CheckBox(this);
         forceCellular.setText("Force cellular (use LTE even when WiFi is on)");
         root.addView(forceCellular);

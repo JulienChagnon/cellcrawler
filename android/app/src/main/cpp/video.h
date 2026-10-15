@@ -32,7 +32,7 @@ struct VideoConfig {
     int fps = 60;
     int maxKbps = 4000;
     int minKbps = 500;
-    std::string cameraId;  // empty = first back-facing camera
+    std::string cameraId;  // empty = widest back camera the phone lets apps open
     bool focusInfinity = true;
 };
 
@@ -41,9 +41,17 @@ public:
     // data is Annex-B H.264 for one frame (SPS/PPS prepended on keyframes).
     using FrameSink = std::function<void(const uint8_t* data, size_t len, bool keyframe, uint64_t captureMonoUs)>;
 
-    ~VideoPipeline() { stop(); }
+    ~VideoPipeline();
     bool start(const VideoConfig& cfg, FrameSink sink);
     void stop();
+
+    // Phone-side recording: a second camera output into the recorder's Surface (a Java
+    // MediaRecorder). Setting or clearing the surface rebuilds the capture session (a short
+    // gap in the live video); recording on/off only changes the repeating request. Both
+    // survive a camera restart. The surface's size must come from recordSize().
+    bool setRecordSurface(ANativeWindow* w);  // takes its own reference; nullptr removes it
+    bool setRecording(bool on);
+    void recordSize(int& w, int& h, int& fps) const;
     bool running() const { return running_; }
     bool failed() const { return failed_; }
 
@@ -58,6 +66,8 @@ public:
     static std::string listCameras();
 
 private:
+    bool startSessionLocked();  // camMu_ held
+    void closeSessionLocked();
     bool openEncoder();
     bool openCamera();
     void outputLoop();
@@ -84,6 +94,17 @@ private:
     ACameraCaptureSession* session_ = nullptr;
     bool timestampsBoottime_ = false;
     std::string camInfo_;
+
+    // Capture session state, rebuilt when the record surface changes (camMu_).
+    std::mutex camMu_;
+    int32_t fpsLo_ = 30, fpsHi_ = 30;
+    float zoomMin_ = 1;
+    bool canFocus_ = false;
+    ANativeWindow* recWindow_ = nullptr;
+    ACaptureSessionOutput* recOut_ = nullptr;
+    ACameraOutputTarget* recTarget_ = nullptr;
+    bool recOn_ = false;
+    int recW_ = 0, recH_ = 0;
 
     std::vector<uint8_t> csd_;  // SPS/PPS
     std::vector<uint8_t> frameBuf_;
