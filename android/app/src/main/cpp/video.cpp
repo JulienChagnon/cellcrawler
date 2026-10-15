@@ -23,6 +23,7 @@ namespace {
 
 constexpr int32_t kColorFormatSurface = 0x7F000789;
 constexpr int32_t kAvcProfileBaseline = 1;
+constexpr int32_t kAvcLevel4 = 0x800;  // up to 1080p30 / 720p60
 constexpr int32_t kBitrateModeCbr = 2;
 constexpr int kFormatPrivate = 0x22;  // AIMAGE_FORMAT_PRIVATE
 constexpr uint32_t kBufferFlagKeyFrame = 1;
@@ -251,6 +252,7 @@ bool VideoPipeline::openEncoder() {
         AMediaFormat_setInt32(f, "bitrate-mode", kBitrateModeCbr);
         AMediaFormat_setInt32(f, "frame-rate", cfg_.fps);
         AMediaFormat_setInt32(f, "profile", kAvcProfileBaseline);  // no B-frames
+        AMediaFormat_setInt32(f, "level", kAvcLevel4);  // a profile without a level is rejected
         AMediaFormat_setInt32(f, "i-frame-interval", attempt == 0 ? 10 : 1);
         if (attempt == 0) {
             // Refresh the picture a column at a time over half a second instead of periodic
