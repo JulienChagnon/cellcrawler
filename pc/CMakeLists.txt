@@ -19,9 +19,11 @@ endif()
 add_library(ffmpeg INTERFACE)
 target_include_directories(ffmpeg INTERFACE ${FFMPEG_DIR}/include)
 if(MSVC)
-  target_link_libraries(ffmpeg INTERFACE ${FFMPEG_DIR}/lib/avcodec.lib ${FFMPEG_DIR}/lib/avutil.lib)
+  target_link_libraries(ffmpeg INTERFACE ${FFMPEG_DIR}/lib/avcodec.lib ${FFMPEG_DIR}/lib/avutil.lib
+    ${FFMPEG_DIR}/lib/avformat.lib ${FFMPEG_DIR}/lib/swscale.lib)
 else()
-  target_link_libraries(ffmpeg INTERFACE ${FFMPEG_DIR}/lib/libavcodec.dll.a ${FFMPEG_DIR}/lib/libavutil.dll.a)
+  target_link_libraries(ffmpeg INTERFACE ${FFMPEG_DIR}/lib/libavcodec.dll.a ${FFMPEG_DIR}/lib/libavutil.dll.a
+    ${FFMPEG_DIR}/lib/libavformat.dll.a ${FFMPEG_DIR}/lib/libswscale.dll.a)
 endif()
 
 add_executable(fpv-pc
@@ -32,6 +34,7 @@ add_executable(fpv-pc
   src/serial_link.cpp
   src/video.cpp
   src/osd.cpp
+  src/recorder.cpp
 )
 target_include_directories(fpv-pc PRIVATE src ${CMAKE_CURRENT_SOURCE_DIR}/../common)
 target_compile_definitions(fpv-pc PRIVATE WIN32_LEAN_AND_MEAN NOMINMAX _WIN32_WINNT=0x0A00)
@@ -43,7 +46,8 @@ if(MINGW)
 endif()
 
 # Put the runtime DLLs and an example config next to the exe.
-file(GLOB FFMPEG_DLLS ${FFMPEG_DIR}/bin/avcodec-*.dll ${FFMPEG_DIR}/bin/avutil-*.dll ${FFMPEG_DIR}/bin/swresample-*.dll)
+file(GLOB FFMPEG_DLLS ${FFMPEG_DIR}/bin/avcodec-*.dll ${FFMPEG_DIR}/bin/avutil-*.dll ${FFMPEG_DIR}/bin/swresample-*.dll
+  ${FFMPEG_DIR}/bin/avformat-*.dll ${FFMPEG_DIR}/bin/swscale-*.dll)
 add_custom_command(TARGET fpv-pc POST_BUILD
   COMMAND ${CMAKE_COMMAND} -E copy_if_different $<TARGET_FILE:SDL3::SDL3> ${FFMPEG_DLLS} $<TARGET_FILE_DIR:fpv-pc>
   COMMAND ${CMAKE_COMMAND} -E copy_if_different ${CMAKE_CURRENT_SOURCE_DIR}/fpv.ini.example $<TARGET_FILE_DIR:fpv-pc>
