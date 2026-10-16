@@ -56,8 +56,13 @@ struct Control {
     int16_t steer = 0;
     uint16_t throttle = 0;
     uint16_t brake = 0;
-    uint8_t flags = 0;  // ser::ControlFlags
+    uint8_t flags = 0;  // ser::ControlFlags, plus kCtlRecord
 };
+
+// Network-only control flag: the phone records full-quality video while it's set (sent in
+// every CONTROL, so a lost packet can't leave it in the wrong state). The phone strips it
+// before forwarding the rest to the ESP32.
+constexpr uint8_t kCtlRecord = 1 << 7;
 
 enum PhoneFlags : uint8_t {
     kPhoneFailsafe = 1 << 0,  // phone has not received control from the PC recently
@@ -65,6 +70,7 @@ enum PhoneFlags : uint8_t {
     kPhoneEspOk = 1 << 2,     // ESP32 telemetry is arriving
     kPhoneCharging = 1 << 3,
     kPhoneVideoOn = 1 << 4,
+    kPhoneRecording = 1 << 5,  // the phone's own recording is running
 };
 
 struct Telemetry {
