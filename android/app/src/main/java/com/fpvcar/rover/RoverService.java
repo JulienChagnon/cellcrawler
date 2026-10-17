@@ -42,6 +42,8 @@ public class RoverService extends Service {
     private UsbLink usb;
     private ConnectivityManager.NetworkCallback cellCallback;
     private Settings settings;
+    private PhoneRecorder recorder;
+    private boolean recordFailed;  // don't retry until the PC asks again
 
     @Override
     public IBinder onBind(Intent intent) {
@@ -69,7 +71,9 @@ public class RoverService extends Service {
         if (settings.forceCellular) requestCellular();
         usb = new UsbLink(this);
         usb.start();
+        recorder = new PhoneRecorder(this);
         handler.post(stats);
+        handler.post(recordPoll);
         return START_NOT_STICKY;
     }
 
@@ -77,6 +81,8 @@ public class RoverService extends Service {
     public void onDestroy() {
         running = false;
         handler.removeCallbacks(stats);
+        handler.removeCallbacks(recordPoll);
+        if (recorder != null) recorder.stop();  // before the engine goes: it owns the camera
         if (usb != null) usb.stop();
         NativeBridge.stop();
         if (cellCallback != null) {
@@ -99,7 +105,13 @@ public class RoverService extends Service {
                 .setContentIntent(open)
                 .setOngoing(true)
                 .build();
-        if (Build.VERSION.SDK_INT >= 29) startForeground(1, n, ServiceInfo.FOREGROUND_SERVICE_TYPE_CAMERA);
+        int type = 0;
+        if (Build.VERSION.SDK_INT >= 29) type = ServiceInfo.FOREGROUND_SERVICE_TYPE_CAMERA;
+        // The microphone type lets the phone recording capture sound with the screen off.
+        if (Build.VERSION.SDK_INT >= 30
+                && checkSelfPermission(android.Manifest.permission.RECORD_AUDIO) == android.content.pm.PackageManager.PERMISSION_GRANTED)
+            type |= ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE;
+        if (Build.VERSION.SDK_INT >= 29) startForeground(1, n, type);
         else startForeground(1, n);
     }
 
@@ -125,6 +137,21 @@ public class RoverService extends Service {
         };
         cm.requestNetwork(req, cellCallback);
     }
+
+    /** Follows the PC's record flag (F on the PC). */
+    private final Runnable recordPoll = new Runnable() {
+        @Override
+        public void run() {
+            boolean want = NativeBridge.wantRecording();
+            if (want && !recorder.active() && !recordFailed) {
+                recordFailed = !recorder.start();
+            } else if (!want) {
+                recordFailed = false;
+                if (recorder.active()) recorder.stop();
+            }
+            handler.postDelayed(this, 250);
+        }
+    };
 
     private final Runnable stats = new Runnable() {
         @Override

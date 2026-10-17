@@ -99,6 +99,9 @@ public class MainActivity extends Activity {
         List<String> need = new ArrayList<>();
         if (checkSelfPermission(Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED)
             need.add(Manifest.permission.CAMERA);
+        // Sound for the phone's own recordings (F on the PC). Optional: without it they're silent.
+        if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED)
+            need.add(Manifest.permission.RECORD_AUDIO);
         if (Build.VERSION.SDK_INT >= 33 && checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED)
             need.add(Manifest.permission.POST_NOTIFICATIONS);
         if (!need.isEmpty()) requestPermissions(need.toArray(new String[0]), 1);

@@ -27,4 +27,18 @@ final class NativeBridge {
     static native String status();
 
     static native String cameraList();
+
+    // Phone recording (PhoneRecorder), driven by the PC's record flag.
+    static native boolean wantRecording();
+
+    /** {width, height, fps} the recorder must use for the camera that's running. */
+    static native int[] recordSize();
+
+    /** Adds the recorder's Surface as a second camera output (null removes it). */
+    static native boolean setRecordSurface(android.view.Surface surface);
+
+    static native boolean setRecordingActive(boolean on);
+
+    /** Reported to the PC so its HUD can show the phone is recording. */
+    static native void setRecordingState(boolean on);
 }
