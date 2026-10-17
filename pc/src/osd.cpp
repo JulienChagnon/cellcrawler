@@ -54,6 +54,54 @@ void bar(SDL_Renderer* r, float x, float y, float w, float h, float frac, Color 
     SDL_RenderFillRect(r, &fg);
 }
 
+// Tab menu: input source and fullscreen, plus the key help. Drawn last, over everything.
+void drawMenu(SDL_Renderer* r, const OsdData& d, float W, float H, float s) {
+    SDL_FRect shade{0, 0, W, H};
+    SDL_SetRenderDrawColor(r, 0, 0, 0, 170);
+    SDL_RenderFillRect(r, &shade);
+
+    float y = H * 0.18f;
+    const float x = W / 2 - 30 * kChar * s / 2;
+    y = text(r, W / 2, y, s * 1.5f, kWhite, Align::Center, "MENU");
+    y += kChar * s;
+    char limit[48], trim[48];
+    std::snprintf(limit, sizeof limit, "Throttle limit:  < %.0f%% >", d.scale * 100);
+    std::snprintf(trim, sizeof trim, "Steering trim:  < %+d >   (Enter: 0)", d.trim);
+    const char* items[] = {d.keyboard ? "Input:  < Keyboard (WASD) >" : "Input:  < Xbox controller >", limit, trim,
+                           d.details ? "HUD details (F3):  < On >" : "HUD details (F3):  < Off >",
+                           d.fullscreen ? "Fullscreen:  < On >" : "Fullscreen:  < Off >"};
+    for (int i = 0; i < 5; ++i)
+        y = text(r, x, y, s, i == d.menuSel ? kYellow : kWhite, Align::Left, "%s %s", i == d.menuSel ? ">" : " ",
+                 items[i]);
+    y = text(r, x, y, s, d.controllerPresent ? kGreen : kGrey, Align::Left, "  Controller %s",
+             d.controllerPresent ? "connected" : "not connected");
+    y += kChar * s;
+
+    if (d.keyboard) {
+        static const char* kHelp[] = {
+            "W  throttle        S  brake",
+            "A / D  steer       R  gear F/R",
+            "Enter  arm         Backspace / B  disarm",
+            "Up / Down  throttle limit +/-10%      F  record",
+            "- / =  steering trim (fine)   Left / Right  (coarse)",
+            "Clicking away from this window brakes the truck",
+        };
+        for (const char* h : kHelp) y = text(r, x, y, s, kGrey, Align::Left, "%s", h);
+    } else {
+        static const char* kHelp[] = {
+            "RT  throttle       LT  brake",
+            "Left stick  steer  LB  gear F/R",
+            "Menu  arm          View / B  disarm",
+            "D-pad  throttle limit and trim   - / =  fine trim",
+            "F (keyboard)  record PC window + phone",
+        };
+        for (const char* h : kHelp) y = text(r, x, y, s, kGrey, Align::Left, "%s", h);
+    }
+    y = text(r, x, y, s, kGrey, Align::Left, "Limit and trim are saved to fpv.ini");
+    y += kChar * s;
+    text(r, W / 2, y, s, kWhite, Align::Center, "Up/Down select   Left/Right/Enter change   Tab or Esc close");
+}
+
 }  // namespace
 
 void drawOsd(SDL_Renderer* r, const OsdData& d) {
@@ -70,61 +118,84 @@ void drawOsd(SDL_Renderer* r, const OsdData& d) {
     const bool udp = d.cfg->mode == Config::Mode::Udp;
     const bool telFresh = L.haveTelemetry && d.nowUs - L.telRxUs < 1000000;
 
-    // ---- Top left: battery, link, video --------------------------------------------
+    // ---- Top left: latency (and battery, if monitored) --------------------------------
     float y = pad;
-    if (telFresh && t.battMv > 1000) {
+    if (udp) {
+        if (d.latency.valid) {
+            const float ms = d.latency.totalMs;
+            y = text(r, pad, y, s, ms > 250 ? kRed : ms > 150 ? kYellow : kWhite, Align::Left, "LAT ~%.0fms", ms);
+        } else if (L.connected) {
+            y = text(r, pad, y, s, kGrey, Align::Left, "LAT --");
+        }
+        if (L.lossPct >= 2) y = text(r, pad, y, s, L.lossPct >= 10 ? kRed : kYellow, Align::Left, "LOSS %.0f%%", L.lossPct);
+    }
+    if (d.cfg->batteryMonitor && telFresh && t.battMv > 1000) {
         uint8_t cells = d.cfg->cells ? d.cfg->cells : t.cells;
         int pct = cells ? battery::percent(t.battMv, cells, d.cfg->chemistry) : -1;
         bool low = (t.espFlags & ser::kTelLowBattery) != 0;
-        Color c = low || (pct >= 0 && pct < 15) ? kRed : pct >= 0 && pct < 30 ? kYellow : kGreen;
-        if (pct >= 0) y = text(r, pad, y, s, c, Align::Left, "BAT %5.2fV %uS %3d%%", t.battMv / 1000.0, cells, pct);
-        else y = text(r, pad, y, s, c, Align::Left, "BAT %5.2fV", t.battMv / 1000.0);
-    } else {
-        y = text(r, pad, y, s, kGrey, Align::Left, "BAT --");
+        Color c = low || (pct >= 0 && pct < 15) ? kRed : pct >= 0 && pct < 30 ? kYellow : kWhite;
+        if (pct >= 0) y = text(r, pad, y, s, c, Align::Left, "BAT %.1fV %d%%", t.battMv / 1000.0, pct);
+        else y = text(r, pad, y, s, c, Align::Left, "BAT %.1fV", t.battMv / 1000.0);
     }
 
-    if (L.rttMs >= 0) {
-        Color c = L.rttMs > d.cfg->rttLimitMs ? kRed : L.rttMs > d.cfg->rttLimitMs / 2 ? kYellow : kWhite;
-        if (udp) y = text(r, pad, y, s, c, Align::Left, "RTT %3.0fms (min %3.0f)  LOSS %.1f%%", L.rttMs, L.rttMinMs, L.lossPct);
-        else y = text(r, pad, y, s, c, Align::Left, "SERIAL RTT %.1fms", L.rttMs);
-    }
-    if (udp) {
-        const VideoStats& v = d.video;
-        if (v.haveStream)
-            y = text(r, pad, y, s, kWhite, Align::Left, "VID %2.0ffps %5.0fkbps dec %.1fms %s  Q %ums", v.fps, v.kbps,
-                     v.decodeMs, v.hw ? "HW" : "SW", v.queueDelayMs);
-        if (d.latency.valid)
-            y = text(r, pad, y, s, kWhite, Align::Left, "LAT ~%3.0fms = cam+enc %2.0f + net %3.0f + pc %2.0f",
-                     d.latency.totalMs, d.latency.phoneMs, d.latency.netMs, d.latency.pcMs);
-        if (telFresh && t.espRttUs)
-            y = text(r, pad, y, s, kGrey, Align::Left, "ESP32 USB %.1fms  err %u", t.espRttUs / 1000.0, t.espRxErrors);
-    } else if (telFresh) {
-        y = text(r, pad, y, s, kGrey, Align::Left, "PWM steer %u  esc %u  err %u", t.steerUs, t.throttleUs, t.espRxErrors);
-    }
-
-    // ---- Top right: phone ----------------------------------------------------------
-    if (udp) {
-        float yr = pad;
-        if (telFresh) {
-            static const char* kNet[] = {"?", "WIFI", "LTE", "5G", "CELL"};
-            const char* nt = t.netType < 5 ? kNet[t.netType] : "?";
-            Color sc = t.rsrpDbm == 0 ? kGrey : t.rsrpDbm > -95 ? kGreen : t.rsrpDbm > -110 ? kYellow : kRed;
-            if (t.rsrpDbm) yr = text(r, W - pad, yr, s, sc, Align::Right, "%s %ddBm", nt, t.rsrpDbm);
-            else yr = text(r, W - pad, yr, s, sc, Align::Right, "%s", nt);
-            Color pc = t.phoneBattPct < 20 ? kRed : kWhite;
-            yr = text(r, W - pad, yr, s, t.phoneTempDeciC > 450 ? kRed : pc, Align::Right, "PHONE %u%% %.1fC%s",
-                      t.phoneBattPct, t.phoneTempDeciC / 10.0, (t.phoneFlags & net::kPhoneCharging) ? " CHG" : "");
+    // F3 / menu: everything else, for diagnosing.
+    if (d.details) {
+        const float ds = s * 0.75f;
+        if (L.rttMs >= 0) {
+            if (udp) y = text(r, pad, y, ds, kGrey, Align::Left, "RTT %.0fms (min %.0f)  LOSS %.1f%%", L.rttMs, L.rttMinMs, L.lossPct);
+            else y = text(r, pad, y, ds, kGrey, Align::Left, "SERIAL RTT %.1fms", L.rttMs);
         }
-        if (!L.peer.empty()) text(r, W - pad, yr, s * 0.75f, kGrey, Align::Right, "%s", L.peer.c_str());
+        if (udp && d.video.haveStream) {
+            const VideoStats& v = d.video;
+            y = text(r, pad, y, ds, kGrey, Align::Left, "VID %.0ffps %.0fkbps dec %.1fms %s  Q %ums", v.fps, v.kbps,
+                     v.decodeMs, v.hw ? "HW" : "SW", v.queueDelayMs);
+        }
+        if (udp && d.latency.valid)
+            y = text(r, pad, y, ds, kGrey, Align::Left, "LAT = cam+enc %.0f + net %.0f + pc %.0f", d.latency.phoneMs,
+                     d.latency.netMs, d.latency.pcMs);
+        if (telFresh)
+            y = text(r, pad, y, ds, kGrey, Align::Left, "ESP32 PWM steer %u esc %u  usb %.1fms err %u", t.steerUs,
+                     t.throttleUs, t.espRttUs / 1000.0, t.espRxErrors);
+        if (udp && telFresh)
+            y = text(r, pad, y, ds, kGrey, Align::Left, "PHONE %u%% %.1fC%s  %s", t.phoneBattPct, t.phoneTempDeciC / 10.0,
+                     (t.phoneFlags & net::kPhoneCharging) ? " CHG" : "", L.peer.c_str());
+        y = text(r, pad, y, ds, kGrey, Align::Left, "LIMIT %.0f%%  TRIM %+d", d.scale * 100, d.trim);
     }
 
-    // ---- Bottom: gear, arm state, inputs ---------------------------------------------
+    // ---- Top right: network and signal; phone only when it needs attention -------------
+    if (udp && telFresh) {
+        float yr = pad;
+        static const char* kNet[] = {"?", "WIFI", "LTE", "5G", "CELL"};
+        const char* nt = t.netType < 5 ? kNet[t.netType] : "?";
+        Color sc = t.rsrpDbm == 0 ? kWhite : t.rsrpDbm > -95 ? kGreen : t.rsrpDbm > -110 ? kYellow : kRed;
+        if (t.rsrpDbm) yr = text(r, W - pad, yr, s, sc, Align::Right, "%s %d", nt, t.rsrpDbm);
+        else yr = text(r, W - pad, yr, s, sc, Align::Right, "%s", nt);
+        if (t.phoneTempDeciC > 450) yr = text(r, W - pad, yr, s, kRed, Align::Right, "PHONE HOT %.0fC", t.phoneTempDeciC / 10.0);
+        if (t.phoneBattPct < 20 && !(t.phoneFlags & net::kPhoneCharging))
+            text(r, W - pad, yr, s, kRed, Align::Right, "PHONE %u%%", t.phoneBattPct);
+    }
+
+    // ---- Top centre: recording ---------------------------------------------------------
+    if (d.recPc || d.recPhoneWanted) {
+        const bool phoneRec = udp && telFresh && (t.phoneFlags & net::kPhoneRecording);
+        const char* what = !udp ? "REC" : phoneRec ? (d.recPc ? "REC PC+PHONE" : "REC PHONE")
+                                                   : (d.recPc ? "REC PC  (phone...)" : "REC (phone...)");
+        const float tw = float(SDL_strlen(what)) * kChar * s;
+        if (blink) {
+            SDL_FRect dot{W / 2 - tw / 2 - 4 * s - kChar * s, pad + 1, kChar * s, kChar * s};
+            SDL_SetRenderDrawColor(r, kRed.r, kRed.g, kRed.b, 255);
+            SDL_RenderFillRect(r, &dot);
+        }
+        text(r, W / 2, pad, s, phoneRec || !udp ? kRed : kYellow, Align::Center, "%s", what);
+    }
+
+    // ---- Bottom: gear, inputs; a hint only while disarmed ------------------------------
     const float big = s * 3;
     const float by = H - pad - kChar * big - 4 * s;
-    text(r, W / 2, by, big, d.gearRev ? kYellow : kWhite, Align::Center, "%s", d.gearRev ? "R" : "F");
+    text(r, W / 2, by, big, d.gearRev ? kYellow : d.armed ? kGreen : kGrey, Align::Center, "%s", d.gearRev ? "R" : "F");
     const float infoY = by - (kChar + 6) * s * 2;
-    if (d.armed) text(r, W / 2, infoY, s, kGreen, Align::Center, "ARMED  CAP %3.0f%%  TRIM %+d", d.scale * 100, d.trim);
-    else text(r, W / 2, infoY, s, kRed, Align::Center, "DISARMED - press MENU to arm");
+    if (!d.popup.empty()) text(r, W / 2, infoY, s * 1.5f, kYellow, Align::Center, "%s", d.popup.c_str());
+    else if (!d.armed) text(r, W / 2, infoY, s, kRed, Align::Center, "DISARMED - press %s to arm", d.keyboard ? "ENTER" : "MENU");
 
     const float bw = 14 * s / 2, bh = 60 * s / 2;
     bar(r, W / 2 + kChar * big + 10, H - pad - bh, bw, bh, d.cmd.throttle / 1000.0f, kGreen);
@@ -141,7 +212,10 @@ void drawOsd(SDL_Renderer* r, const OsdData& d) {
     // ---- Centre: the single most important warning ------------------------------------
     const char* warn = nullptr;
     Color wc = kRed;
-    if (!d.padConnected) warn = "NO CONTROLLER";
+    if (!d.padConnected && d.keyboard) warn = "CLICK THE WINDOW TO DRIVE";
+    else if (!d.padConnected) warn = "NO CONTROLLER - TAB FOR KEYBOARD";
+    else if (!L.connected && udp && L.lastBadUs && d.nowUs - L.lastBadUs < 2000000)
+        warn = "PHONE PASSPHRASE DOESN'T MATCH FPV.INI";
     else if (!L.connected) warn = udp ? (L.peer.empty() ? "WAITING FOR PHONE" : "LINK LOST") : "NO ESP32 DATA";
     else if (udp && (t.phoneFlags & net::kPhoneFailsafe) && d.armed) warn = "PHONE FAILSAFE";
     else if (udp && telFresh && !(t.phoneFlags & net::kPhoneUsbOk)) warn = "ESP32 USB DISCONNECTED";
@@ -149,9 +223,11 @@ void drawOsd(SDL_Renderer* r, const OsdData& d) {
     else if (telFresh && (t.espFlags & ser::kTelFailsafe) && d.armed) warn = "ESP32 FAILSAFE";
     else if (telFresh && (t.espFlags & ser::kTelNeedNeutral) && d.armed) { warn = "RELEASE THROTTLE"; wc = kYellow; }
     else if (d.limiter < 1) { warn = "HIGH LATENCY - THROTTLE LIMITED"; wc = kYellow; }
-    else if (telFresh && (t.espFlags & ser::kTelLowBattery) && blink) warn = "LOW BATTERY";
+    else if (d.cfg->batteryMonitor && telFresh && (t.espFlags & ser::kTelLowBattery) && blink) warn = "LOW BATTERY";
     if (warn) text(r, W / 2, H * 0.35f, s * 2, wc, Align::Center, "%s", warn);
     if (!d.note.empty()) text(r, W / 2, H * 0.35f + kChar * s * 3, s * 1.5f, kYellow, Align::Center, "%s", d.note.c_str());
+
+    if (d.menuOpen) drawMenu(r, d, W, H, s);
 }
 
 }  // namespace pc
