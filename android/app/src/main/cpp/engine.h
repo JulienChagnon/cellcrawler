@@ -45,6 +45,13 @@ public:
     void setPhoneStats(const PhoneStats& s);
     std::string status();
 
+    // Phone recording, driven by the PC's record flag (RoverService polls wantRecording()).
+    bool wantRecording() const { return wantRecord_; }
+    void setRecordingState(bool on) { recording_ = on; }  // reported to the PC
+    bool setRecordSurface(ANativeWindow* w) { return video_.setRecordSurface(w); }
+    bool setRecording(bool on) { return video_.setRecording(on); }
+    void recordSize(int& w, int& h, int& fps) const { video_.recordSize(w, h, fps); }
+
 private:
     void netLoop();
     bool openSocket();
@@ -93,6 +100,8 @@ private:
     uint64_t espRxUs_ = 0;
 
     PhoneStats phone_;
+    std::atomic<bool> wantRecord_{false};
+    std::atomic<bool> recording_{false};
 };
 
 }  // namespace rover

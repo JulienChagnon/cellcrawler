@@ -221,7 +221,8 @@ void Engine::handlePacket(const uint8_t* buf, size_t n, uint64_t now) {
             sc.steer = c.steer;
             sc.throttle = c.throttle;
             sc.brake = c.brake;
-            sc.flags = c.flags;
+            sc.flags = uint8_t(c.flags & ~net::kCtlRecord);  // the ESP32 gets drive flags only
+            wantRecord_ = (c.flags & net::kCtlRecord) != 0;
             usb_.sendControl(sc);  // straight out to the ESP32
             std::lock_guard<std::mutex> lk(stateMu_);
             lastControlRxUs_ = now;
@@ -278,7 +279,7 @@ void Engine::sendTelemetry(uint64_t now) {
         }
         t.phoneFlags = uint8_t((failsafe_ ? net::kPhoneFailsafe : 0) | (usb_.isOpen() ? net::kPhoneUsbOk : 0) |
                                (espFresh ? net::kPhoneEspOk : 0) | (phone_.charging ? net::kPhoneCharging : 0) |
-                               (video_.running() ? net::kPhoneVideoOn : 0));
+                               (video_.running() ? net::kPhoneVideoOn : 0) | (recording_ ? net::kPhoneRecording : 0));
         t.phoneBattPct = phone_.battPct;
         t.phoneTempDeciC = phone_.tempDeciC;
         t.rsrpDbm = phone_.rsrpDbm;

@@ -1,5 +1,6 @@
 // JNI entry points for com.fpvcar.rover.NativeBridge.
 #include <jni.h>
+#include <android/native_window_jni.h>
 
 #include <algorithm>
 #include <memory>
@@ -91,6 +92,45 @@ JNIEXPORT jstring JNICALL Java_com_fpvcar_rover_NativeBridge_status(JNIEnv* env,
     std::lock_guard<std::mutex> lk(gMu);
     std::string s = gEngine ? gEngine->status() : std::string("Stopped\nUSB:    ") + (gUsb.isOpen() ? gUsb.chip() : "not connected") + "\n";
     return env->NewStringUTF(s.c_str());
+}
+
+JNIEXPORT jboolean JNICALL Java_com_fpvcar_rover_NativeBridge_wantRecording(JNIEnv*, jclass) {
+    std::lock_guard<std::mutex> lk(gMu);
+    return gEngine && gEngine->wantRecording() ? JNI_TRUE : JNI_FALSE;
+}
+
+JNIEXPORT jintArray JNICALL Java_com_fpvcar_rover_NativeBridge_recordSize(JNIEnv* env, jclass) {
+    std::lock_guard<std::mutex> lk(gMu);
+    jint v[3] = {0, 0, 0};
+    if (gEngine) {
+        int w, h, fps;
+        gEngine->recordSize(w, h, fps);
+        v[0] = w;
+        v[1] = h;
+        v[2] = fps;
+    }
+    jintArray a = env->NewIntArray(3);
+    env->SetIntArrayRegion(a, 0, 3, v);
+    return a;
+}
+
+JNIEXPORT jboolean JNICALL Java_com_fpvcar_rover_NativeBridge_setRecordSurface(JNIEnv* env, jclass, jobject surface) {
+    std::lock_guard<std::mutex> lk(gMu);
+    if (!gEngine) return JNI_FALSE;
+    ANativeWindow* w = surface ? ANativeWindow_fromSurface(env, surface) : nullptr;
+    const bool ok = gEngine->setRecordSurface(w);
+    if (w) ANativeWindow_release(w);  // the pipeline holds its own reference
+    return ok ? JNI_TRUE : JNI_FALSE;
+}
+
+JNIEXPORT jboolean JNICALL Java_com_fpvcar_rover_NativeBridge_setRecordingActive(JNIEnv*, jclass, jboolean on) {
+    std::lock_guard<std::mutex> lk(gMu);
+    return gEngine && gEngine->setRecording(on) ? JNI_TRUE : JNI_FALSE;
+}
+
+JNIEXPORT void JNICALL Java_com_fpvcar_rover_NativeBridge_setRecordingState(JNIEnv*, jclass, jboolean on) {
+    std::lock_guard<std::mutex> lk(gMu);
+    if (gEngine) gEngine->setRecordingState(on);
 }
 
 JNIEXPORT jstring JNICALL Java_com_fpvcar_rover_NativeBridge_cameraList(JNIEnv* env, jclass) {
