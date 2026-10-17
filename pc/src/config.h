@@ -24,6 +24,8 @@ struct Config {
     bool vsync = false;
     int windowWidth = 1280, windowHeight = 720;
 
+    std::string recordDir;       // F records the window here; empty = "recordings" next to the exe
+    bool batteryMonitor = true;  // false: no battery divider wired, hide BAT and LOW BATTERY
     uint8_t cells = 0;  // 0 = use the ESP32's detection
     fpv::battery::Chemistry chemistry = fpv::battery::Chemistry::LiPo;
 };

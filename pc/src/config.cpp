@@ -65,6 +65,8 @@ bool loadConfig(const std::string& path, Config& c) {
         else if (k == "vsync") c.vsync = toBool(v);
         else if (k == "window_width") c.windowWidth = i;
         else if (k == "window_height") c.windowHeight = i;
+        else if (k == "battery_monitor") c.batteryMonitor = toBool(v);
+        else if (k == "record_dir") c.recordDir = v;
         else if (k == "cells") c.cells = uint8_t(i);
         else if (k == "chemistry") c.chemistry = v == "nimh" ? fpv::battery::Chemistry::NiMH : fpv::battery::Chemistry::LiPo;
         else std::fprintf(stderr, "%s:%d: unknown key '%s' ignored\n", path.c_str(), lineNo, k.c_str());

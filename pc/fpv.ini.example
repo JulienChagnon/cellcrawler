@@ -33,6 +33,10 @@ steer_trim = 0
 rtt_limit_ms = 250
 
 ; ---- Video ----
+; F starts/stops recording: the PC saves this window (video + HUD) here, the phone saves
+; full-quality video with sound to its Movies/FPV Rover folder. Blank = "recordings" next
+; to fpv-pc.exe.
+record_dir =
 ; 1 = D3D11 hardware decode (falls back to software automatically)
 hw_decode = 1
 fullscreen = 0
@@ -42,6 +46,8 @@ window_width = 1280
 window_height = 720
 
 ; ---- Battery ----
+; 0 = no voltage divider wired to the ESP32 yet: hide the BAT readout and LOW BATTERY warning
+battery_monitor = 1
 ; 0 = use the cell count the ESP32 detected at power-up
 cells = 0
 ; lipo or nimh
