@@ -23,27 +23,38 @@ Xbox pad ──XInput 1 kHz──▶ fpv-pc (C++) ══UDP control ≥100 Hz═
 
 ## Controls
 
-| Input | Action |
-|---|---|
-| **Menu (≡)** | Arm |
-| **View (⧉)** or **B** | Disarm |
-| **RT** | Throttle in the current gear |
-| **LT** | Brake (in reverse gear: coast) |
-| **LB** | Toggle gear F ↔ R (only while RT is released) |
-| Left stick X | Steering |
-| D-pad ↑ / ↓ | Throttle scale ±10 % (of the firmware cap) |
-| D-pad ← / → | Steering trim |
-| F11 / Esc | Fullscreen / quit |
+| Controller | Keyboard | Action |
+|---|---|---|
+| **Menu (≡)** | **Enter** | Arm |
+| **View (⧉)** or **B** | **Backspace** or **B** | Disarm |
+| **RT** | **W** | Throttle in the current gear (keyboard: starts at 30 %, full after 0.3 s) |
+| **LT** | **S** | Brake (in reverse gear: coast) |
+| **LB** | **R** | Toggle gear F ↔ R (only while the throttle is released) |
+| Left stick X | **A / D** | Steering (keyboard: ramps to full lock over 0.2 s) |
+| D-pad ↑ / ↓ | ↑ / ↓ | Throttle limit ±10 % (default 60 %, saved to `fpv.ini`) |
+| D-pad ← / → | ← / → | Steering trim, coarse (saved to `fpv.ini`) |
+| − / = | − / = | Steering trim, fine |
+| | **Tab** | Menu: controller ↔ keyboard, throttle limit, steering trim, HUD details, fullscreen, key help |
+| | **F3** | HUD details (RTT, video, latency breakdown, ESP32 PWM, phone) |
+| | F11 / Esc | Fullscreen / quit |
+
+Start in keyboard mode with `input = keyboard` in `fpv.ini`, or switch in the Tab menu
+(switching disarms). With the keyboard, the `fpv-pc` window must have focus: clicking away
+while armed counts as losing the controller, so the truck brakes.
 
 ## Safety layers
 
-* **ESP32:** no valid command for 150 ms → neutral throttle and centred steering. After a
-  link loss longer than 1 s, disarm, or boot, it ignores throttle until the trigger is released.
-  It enforces hard throttle caps (default 40 % forward, 25 % reverse) and a hardware watchdog.
-* **Phone:** no command from the PC for 250 ms → sends explicit neutral to the ESP32.
-* **PC:** controller unplugged → disarmed. RTT over `rtt_limit_ms` → throttle halved.
-* Every UDP packet is authenticated (SipHash-2-4 MAC with a shared key) and replay-checked,
-  so traffic to the open port cannot drive the truck.
+* **ESP32:** no valid command for 150 ms, or a failsafe frame from the phone or PC → 50 %
+  brake (`failsafeBrake`) and centred steering, held until the link is back. Before the first
+  arm after boot it stays in neutral so the ESC can arm. After a link loss longer than 1 s,
+  disarm, or boot, it ignores throttle until the trigger is released.
+  It enforces hard throttle caps (100 % both ways; the PC app's throttle limit, default
+  60 %, scales them) and a hardware watchdog.
+* **Phone:** no command from the PC for 250 ms → tells the ESP32 to go to failsafe at once.
+* **PC:** controller unplugged while armed → failsafe (brakes) until it's back, then
+  disarmed. RTT over `rtt_limit_ms` → throttle halved.
+* Every UDP packet is authenticated (SipHash-2-4 MAC with a key derived from a shared
+  passphrase) and replay-checked, so traffic to the open port cannot drive the truck.
 * LT tapped twice at a standstill will **not** reverse the truck. The firmware inserts a
   short forward guard pulse to drop the ESC out of its reverse-armed state (see docs/tuning.md).
 

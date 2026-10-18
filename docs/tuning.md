@@ -48,8 +48,19 @@ average) of control latency.
 
 ## Steering
 
-`steerCenterUs` sets mechanical centre (use the D-pad ← / → for live trim first, then bake the
-value in). `steerRangeUs` sets the lock. Reduce it if the servo buzzes at full lock.
+`steerCenterUs` sets mechanical centre. Trim live first with − / = (fine) or ← / → (coarse);
+the PC saves it to `fpv.ini` as `steer_trim`.
+
+Trim is added to the steering command, so a large trim costs lock on the other side (at
++300 you only get 70 % of full lock the opposite way), and in failsafe or at power-up the
+servo sits at the untrimmed centre. If you need more than about ±150, **re-seat the servo
+horn** instead:
+
+1. Set the trim to 0 (Tab menu → Steering trim → Enter).
+2. Power the ESP32 and the ESC: the servo goes to its exact centre (1500 µs) and holds it.
+3. Undo the horn screw, pull the horn off the servo shaft, and push it back on at the
+   spline that points the wheels straightest. Refit the screw.
+4. Fine-tune with − / =; it should now need well under ±100. `steerRangeUs` sets the lock. Reduce it if the servo buzzes at full lock.
 `steer_expo` in `fpv.ini` softens the centre.
 
 ## Video (phone app)
