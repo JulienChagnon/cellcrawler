@@ -27,7 +27,10 @@ mac      = SipHash-2-4(key, header | payload)
 | 6 VIDEO_FEEDBACK | PC → phone | 5 Hz + immediate keyframe requests | requestKeyframe u8, lossPermille u16, queueDelayMs u16, recvKbps u32 |
 
 Control values: steer −1000…1000, throttle and brake 0…1000. Flags: bit0 armed, bit1 reverse
-gear. Every CONTROL carries the full state, so a lost packet is simply superseded.
+gear, bit2 failsafe (the PC's controller is gone; the ESP32 brakes and ignores the rest),
+bit7 record (network only: the phone records full-quality video while it's set, and strips
+the bit before forwarding to the ESP32). Telemetry phone flag bit5 says the phone is
+recording. Every CONTROL carries the full state, so a lost packet is simply superseded.
 
 Video: one encoded H.264 frame (Annex B, with SPS/PPS before keyframes) is split into chunks
 of exactly `kMaxVideoChunk` bytes; only the last chunk is shorter. The PC decodes a frame as
